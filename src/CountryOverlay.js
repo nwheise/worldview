@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { coordsToVectors } from './utils/geoUtils.js';
+import { latLonToVector3, coordsToVectors } from './utils/geoUtils.js';
 
 /**
  * Manages country overlay visualization with fixed positioning
@@ -58,31 +58,48 @@ export class CountryOverlay {
    * @param {THREE.Material} material - Material for the overlay
    */
   createPolygonOverlay(coordinates, radius, material) {
-    const points = coordsToVectors(coordinates, radius);
+    if (coordinates.length < 3) return;
 
-    if (points.length < 3) {
-      return; // Need at least 3 points for a polygon
+    // GeoJSON polygon rings are closed (last point === first point); remove the duplicate
+    // before triangulating so earcut doesn't produce a degenerate zero-area triangle.
+    const last = coordinates.length - 1;
+    const isClosed = coordinates[0][0] === coordinates[last][0] &&
+                     coordinates[0][1] === coordinates[last][1];
+    const openCoords = isClosed ? coordinates.slice(0, -1) : coordinates;
+
+    if (openCoords.length < 3) return;
+
+    // Map open ring to 3D sphere positions
+    const points3D = openCoords.map(([lon, lat]) => latLonToVector3(lat, lon, radius));
+
+    // Triangulate in 2D lat/lon space using earcut (via THREE.ShapeUtils).
+    // Fan triangulation only works for convex polygons; countries are almost always
+    // concave, which caused the "lines jutting out" artifact.
+    const points2D = openCoords.map(([lon, lat]) => new THREE.Vector2(lon, lat));
+    let triangles;
+    try {
+      triangles = THREE.ShapeUtils.triangulateShape(points2D, []);
+    } catch (e) {
+      console.warn('Triangulation failed, skipping fill:', e);
+      triangles = [];
     }
 
-    // Create a shape from the points
-    // We'll use a simple approach: create triangles from the first point to each edge
-    const vertices = [];
-    const firstPoint = points[0];
+    if (triangles.length > 0) {
+      const vertices = [];
+      for (const [a, b, c] of triangles) {
+        const pa = points3D[a], pb = points3D[b], pc = points3D[c];
+        vertices.push(pa.x, pa.y, pa.z, pb.x, pb.y, pb.z, pc.x, pc.y, pc.z);
+      }
 
-    for (let i = 1; i < points.length - 1; i++) {
-      vertices.push(firstPoint.x, firstPoint.y, firstPoint.z);
-      vertices.push(points[i].x, points[i].y, points[i].z);
-      vertices.push(points[i + 1].x, points[i + 1].y, points[i + 1].z);
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+      geometry.computeVertexNormals();
+
+      const mesh = new THREE.Mesh(geometry, material);
+      this.overlayGroup.add(mesh);
     }
 
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-    geometry.computeVertexNormals();
-
-    const mesh = new THREE.Mesh(geometry, material);
-    this.overlayGroup.add(mesh);
-
-    // Also add border lines for clarity
+    // Border lines use the original closed ring so the outline is fully closed
     const linePoints = coordsToVectors(coordinates, radius);
     const lineGeometry = new THREE.BufferGeometry().setFromPoints(linePoints);
     const lineMaterial = new THREE.LineBasicMaterial({
