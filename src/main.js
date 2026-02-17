@@ -9,48 +9,44 @@ import { CountrySelector } from './CountrySelector.js';
 class WorldViewApp {
   constructor() {
     this.canvas = document.getElementById('globe-canvas');
-    this.selectElement = document.getElementById('country-select');
-    this.clearButton = document.getElementById('clear-btn');
     this.loadingElement = document.getElementById('loading');
+
+    // Compass elements
+    this.compassControl = document.getElementById('compass-control');
+    this.compassSvg = document.getElementById('compass');
+    this.compassNeedle = document.getElementById('compass-needle');
+    this.compassRotation = 0; // radians
 
     this.init();
   }
 
   async init() {
     try {
-      // Show loading indicator
       this.showLoading();
 
-      // Initialize globe
       this.globe = new Globe(this.canvas);
 
-      // Load country data
       this.countryLoader = new CountryLoader();
       await this.countryLoader.load();
 
-      // Initialize overlay system
-      this.overlay = new CountryOverlay(this.globe.getScene());
+      this.overlay = new CountryOverlay(this.globe.getScene(), this.globe.getCamera());
 
-      // Setup country selector UI
+      // Searchable country selector
       this.selector = new CountrySelector(
-        this.selectElement,
-        this.clearButton,
+        document.getElementById('country-search'),
+        document.getElementById('country-list'),
+        document.getElementById('clear-btn'),
         this.countryLoader
       );
       this.selector.populate();
 
-      // Render countries on globe
       this.globe.renderCountries(this.countryLoader.countries);
 
-      // Setup event handlers
       this.setupEventHandlers();
-
-      // Add overlay update to animation loop
+      this.setupCompass();
       this.startOverlayUpdate();
 
-      // Hide loading indicator
       this.hideLoading();
-
     } catch (error) {
       console.error('Failed to initialize application:', error);
       this.showError('Failed to load country data. Please refresh the page.');
@@ -58,28 +54,82 @@ class WorldViewApp {
   }
 
   setupEventHandlers() {
-    // Handle country selection from dropdown
     this.selector.onSelect((country) => {
       this.showCountryOverlay(country);
     });
 
-    // Handle clear button
     this.selector.onClear(() => {
       this.overlay.clear();
+      this.compassControl.classList.add('hidden');
+      this.compassRotation = 0;
+      this.compassNeedle.setAttribute('transform', 'rotate(0)');
     });
+  }
 
-    // Handle country click on globe
-    this.globe.setCountryClickHandler((country) => {
-      this.showCountryOverlay(country);
+  /**
+   * Draggable compass: click-and-drag rotates the needle and the overlay.
+   * Supports both mouse and touch.
+   */
+  setupCompass() {
+    let dragging = false;
+    let dragStartAngle = 0;
+    let rotationAtStart = 0;
+
+    const getPointerAngle = (clientX, clientY) => {
+      const rect = this.compassSvg.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      // Angle measured clockwise from top (north)
+      return Math.atan2(clientX - cx, -(clientY - cy));
+    };
+
+    const onStart = (clientX, clientY) => {
+      dragging = true;
+      dragStartAngle = getPointerAngle(clientX, clientY);
+      rotationAtStart = this.compassRotation;
+    };
+
+    const onMove = (clientX, clientY) => {
+      if (!dragging) return;
+      const angle = getPointerAngle(clientX, clientY);
+      this.compassRotation = rotationAtStart + (angle - dragStartAngle);
+      const deg = this.compassRotation * 180 / Math.PI;
+      this.compassNeedle.setAttribute('transform', `rotate(${deg})`);
+      this.overlay.setRotation(this.compassRotation);
+    };
+
+    const onEnd = () => { dragging = false; };
+
+    // Mouse
+    this.compassSvg.addEventListener('mousedown', (e) => {
+      onStart(e.clientX, e.clientY);
+      e.preventDefault();
     });
+    document.addEventListener('mousemove', (e) => onMove(e.clientX, e.clientY));
+    document.addEventListener('mouseup', onEnd);
+
+    // Touch
+    this.compassSvg.addEventListener('touchstart', (e) => {
+      const t = e.touches[0];
+      onStart(t.clientX, t.clientY);
+      e.preventDefault();
+    });
+    document.addEventListener('touchmove', (e) => {
+      const t = e.touches[0];
+      onMove(t.clientX, t.clientY);
+    });
+    document.addEventListener('touchend', onEnd);
   }
 
   showCountryOverlay(country) {
     this.overlay.show(country);
     this.selector.enableClearButton();
 
-    // Update dropdown to match if clicked on globe
-    this.selectElement.value = country.id;
+    // Show compass and reset rotation
+    this.compassControl.classList.remove('hidden');
+    this.compassRotation = 0;
+    this.compassNeedle.setAttribute('transform', 'rotate(0)');
+    this.overlay.setRotation(0);
   }
 
   startOverlayUpdate() {

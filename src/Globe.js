@@ -325,4 +325,11 @@ export class Globe {
   getScene() {
     return this.scene;
   }
+
+  /**
+   * Get the camera for overlay centering
+   */
+  getCamera() {
+    return this.camera;
+  }
 }
