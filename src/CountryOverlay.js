@@ -2,16 +2,32 @@ import * as THREE from 'three';
 import { latLonToVector3, coordsToVectors } from './utils/geoUtils.js';
 
 /**
- * Manages country overlay visualization with fixed positioning
+ * Manages country overlay visualization with fixed screen-center positioning.
+ *
+ * The overlay geometry is built on the sphere at a radius just barely above the
+ * globe surface.  Each frame the overlayGroup is rotated so the country's
+ * centroid faces the camera AND the country's geographic north points toward
+ * the top of the screen (camera up).  An optional user rotation around the
+ * view axis allows manual adjustment via a dial.
  */
 export class CountryOverlay {
-  constructor(scene) {
+  constructor(scene, camera) {
     this.scene = scene;
+    this.camera = camera;
     this.overlayGroup = new THREE.Group();
-    this.fixedRotation = null;
+    this.centroidDir = null;   // unit vector of country centroid on sphere
     this.currentCountry = null;
+    this.userRotation = 0;     // additional rotation in radians around view axis
 
     this.scene.add(this.overlayGroup);
+  }
+
+  /**
+   * Set additional rotation around the view axis (from the UI dial).
+   * @param {number} radians
+   */
+  setRotation(radians) {
+    this.userRotation = radians;
   }
 
   /**
@@ -19,7 +35,6 @@ export class CountryOverlay {
    * @param {Object} country - Country feature with geometry
    */
   show(country) {
-    // Clear any existing overlay
     this.clear();
 
     this.currentCountry = country;
@@ -30,16 +45,18 @@ export class CountryOverlay {
       return;
     }
 
-    // Store the current rotation as fixed
-    this.fixedRotation = this.overlayGroup.rotation.clone();
+    // Compute the centroid direction (unit vector) of the country on the sphere
+    this.centroidDir = this.computeCentroidDirection(geometry);
 
-    // Create overlay meshes at larger radius for visibility
-    const overlayRadius = 5.2;
+    // Overlay radius just above the globe surface (5.0) so it sits flush
+    const overlayRadius = 5.005;
     const material = new THREE.MeshBasicMaterial({
       color: 0xff3333,
       transparent: true,
       opacity: 0.4,
-      side: THREE.DoubleSide
+      side: THREE.DoubleSide,
+      depthTest: false,
+      depthWrite: false,
     });
 
     if (geometry.type === 'Polygon') {
@@ -49,6 +66,61 @@ export class CountryOverlay {
         this.createPolygonOverlay(polygon[0], overlayRadius, material);
       });
     }
+
+    // Apply initial rotation so it faces the camera immediately
+    this.update();
+  }
+
+  /**
+   * Compute the centroid of the country as a unit direction vector on the sphere.
+   * Averages all 3D vertex positions and normalises the result.
+   * @param {Object} geometry - GeoJSON geometry
+   * @returns {THREE.Vector3} unit vector
+   */
+  computeCentroidDirection(geometry) {
+    const rings =
+      geometry.type === 'Polygon'
+        ? [geometry.coordinates[0]]
+        : geometry.type === 'MultiPolygon'
+          ? geometry.coordinates.map(p => p[0])
+          : [];
+
+    const sum = new THREE.Vector3();
+    let count = 0;
+
+    rings.forEach(ring => {
+      ring.forEach(([lon, lat]) => {
+        sum.add(latLonToVector3(lat, lon, 1)); // unit sphere
+        count++;
+      });
+    });
+
+    return count > 0 ? sum.divideScalar(count).normalize() : new THREE.Vector3(0, 0, 1);
+  }
+
+  /**
+   * Compute the local tangent frame at a point on the unit sphere.
+   * Returns { right, up, forward } where forward = dir (outward normal),
+   * up = geographic-north tangent, right = east tangent.
+   * @param {THREE.Vector3} dir - unit vector (point on sphere)
+   * @returns {{right: THREE.Vector3, up: THREE.Vector3, forward: THREE.Vector3}}
+   */
+  localFrame(dir) {
+    const worldUp = new THREE.Vector3(0, 1, 0);
+    const forward = dir.clone();
+
+    // Project world-up onto the tangent plane to get the "north" tangent.
+    // north = normalize( Y - (Y·dir) * dir )
+    let up = worldUp.clone().addScaledVector(forward, -worldUp.dot(forward));
+    if (up.lengthSq() < 1e-8) {
+      // dir is near a pole — fall back to Z as reference
+      up = new THREE.Vector3(0, 0, 1).addScaledVector(forward, -new THREE.Vector3(0, 0, 1).dot(forward));
+    }
+    up.normalize();
+
+    const right = new THREE.Vector3().crossVectors(up, forward).normalize();
+
+    return { right, up, forward };
   }
 
   /**
@@ -73,8 +145,6 @@ export class CountryOverlay {
     const points3D = openCoords.map(([lon, lat]) => latLonToVector3(lat, lon, radius));
 
     // Triangulate in 2D lat/lon space using earcut (via THREE.ShapeUtils).
-    // Fan triangulation only works for convex polygons; countries are almost always
-    // concave, which caused the "lines jutting out" artifact.
     const points2D = openCoords.map(([lon, lat]) => new THREE.Vector2(lon, lat));
     let triangles;
     try {
@@ -96,6 +166,7 @@ export class CountryOverlay {
       geometry.computeVertexNormals();
 
       const mesh = new THREE.Mesh(geometry, material);
+      mesh.renderOrder = 999;
       this.overlayGroup.add(mesh);
     }
 
@@ -106,9 +177,12 @@ export class CountryOverlay {
       color: 0xff0000,
       linewidth: 2,
       transparent: true,
-      opacity: 0.8
+      opacity: 0.8,
+      depthTest: false,
+      depthWrite: false,
     });
     const line = new THREE.Line(lineGeometry, lineMaterial);
+    line.renderOrder = 999;
     this.overlayGroup.add(line);
   }
 
@@ -116,7 +190,6 @@ export class CountryOverlay {
    * Clear the current overlay
    */
   clear() {
-    // Remove all children from overlay group
     while (this.overlayGroup.children.length > 0) {
       const child = this.overlayGroup.children[0];
       if (child.geometry) child.geometry.dispose();
@@ -125,31 +198,56 @@ export class CountryOverlay {
     }
 
     this.currentCountry = null;
-    this.fixedRotation = null;
+    this.centroidDir = null;
   }
 
   /**
-   * Update overlay rotation to keep it fixed in view
-   * Call this in the animation loop
+   * Rotate the overlay group so:
+   *  1. The country centroid faces the camera.
+   *  2. Geographic north at the centroid maps to screen-up at the camera point.
+   *  3. An optional user rotation is applied around the view axis.
+   *
+   * Call this every frame in the animation loop.
    */
   update() {
-    if (this.fixedRotation) {
-      this.overlayGroup.rotation.copy(this.fixedRotation);
+    if (!this.centroidDir) return;
+
+    const cameraDir = this.camera.position.clone().normalize();
+
+    // Build the tangent frame at the centroid (source) and camera-facing
+    // point (target).  Both frames are {right, up, forward}.
+    const srcFrame = this.localFrame(this.centroidDir);
+    const tgtFrame = this.localFrame(cameraDir);
+
+    // Source basis matrix (columns = right, up, forward)
+    const srcMat = new THREE.Matrix4().makeBasis(
+      srcFrame.right, srcFrame.up, srcFrame.forward
+    );
+
+    // Target basis matrix
+    const tgtMat = new THREE.Matrix4().makeBasis(
+      tgtFrame.right, tgtFrame.up, tgtFrame.forward
+    );
+
+    // Rotation = tgtMat * srcMat^T  (maps source frame → target frame)
+    const srcMatInv = srcMat.clone().invert();
+    const rotMat = tgtMat.clone().multiply(srcMatInv);
+
+    // Optional user rotation around the view axis (cameraDir)
+    if (this.userRotation !== 0) {
+      const userRot = new THREE.Matrix4().makeRotationAxis(cameraDir, this.userRotation);
+      rotMat.premultiply(userRot);
     }
+
+    this.overlayGroup.quaternion.setFromRotationMatrix(rotMat);
   }
 
-  /**
-   * Check if an overlay is currently displayed
-   * @returns {boolean}
-   */
+  /** @returns {boolean} */
   hasOverlay() {
     return this.currentCountry !== null;
   }
 
-  /**
-   * Get the currently displayed country
-   * @returns {Object|null}
-   */
+  /** @returns {Object|null} */
   getCurrentCountry() {
     return this.currentCountry;
   }

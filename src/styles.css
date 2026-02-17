@@ -51,7 +51,12 @@ label {
   font-weight: 500;
 }
 
-#country-select {
+/* Searchable country input */
+#country-search-wrapper {
+  position: relative;
+}
+
+#country-search {
   width: 100%;
   padding: 10px 12px;
   border: 1px solid #444;
@@ -59,17 +64,45 @@ label {
   background-color: #1a1a2e;
   color: #ffffff;
   font-size: 14px;
-  cursor: pointer;
   outline: none;
   transition: border-color 0.2s;
 }
 
-#country-select:hover {
+#country-search:hover {
   border-color: #666;
 }
 
-#country-select:focus {
+#country-search:focus {
   border-color: #4a9eff;
+}
+
+#country-list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  max-height: 250px;
+  overflow-y: auto;
+  background-color: #1a1a2e;
+  border: 1px solid #444;
+  border-top: none;
+  border-radius: 0 0 4px 4px;
+  z-index: 20;
+}
+
+#country-list.hidden {
+  display: none;
+}
+
+.country-item {
+  padding: 8px 12px;
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.country-item:hover {
+  background-color: #2a2a4e;
 }
 
 #clear-btn {
@@ -107,6 +140,34 @@ label {
 
 #loading.hidden {
   display: none;
+}
+
+/* Compass dial */
+#compass-control {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  z-index: 10;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(10px);
+  padding: 10px;
+  border-radius: 8px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+  user-select: none;
+  touch-action: none;
+}
+
+#compass-control.hidden {
+  display: none;
+}
+
+#compass {
+  display: block;
+  cursor: grab;
+}
+
+#compass:active {
+  cursor: grabbing;
 }
 
 /* Responsive adjustments */

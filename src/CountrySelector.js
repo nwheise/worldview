@@ -1,11 +1,13 @@
 /**
- * Manages the country selection UI dropdown
+ * Manages a searchable country selector: text input with a filtered dropdown list.
  */
 export class CountrySelector {
-  constructor(selectElement, clearButton, countryLoader) {
-    this.selectElement = selectElement;
+  constructor(searchInput, listElement, clearButton, countryLoader) {
+    this.searchInput = searchInput;
+    this.listElement = listElement;
     this.clearButton = clearButton;
     this.countryLoader = countryLoader;
+    this.countries = [];
     this.onSelectCallback = null;
     this.onClearCallback = null;
 
@@ -13,84 +15,83 @@ export class CountrySelector {
   }
 
   /**
-   * Populate the dropdown with country names
+   * Populate the internal country list from the loader.
    */
   populate() {
-    const countries = this.countryLoader.getCountryList();
-
-    // Clear existing options except the first placeholder
-    while (this.selectElement.options.length > 1) {
-      this.selectElement.remove(1);
-    }
-
-    // Add country options
-    countries.forEach(({ id, name }) => {
-      const option = document.createElement('option');
-      option.value = id;
-      option.textContent = name;
-      this.selectElement.appendChild(option);
-    });
+    this.countries = this.countryLoader.getCountryList();
   }
 
   /**
-   * Setup event listeners for selection and clear
+   * Render a (possibly filtered) list of countries into the dropdown.
    */
-  setupEventListeners() {
-    this.selectElement.addEventListener('change', () => {
-      const countryId = this.selectElement.value;
+  renderList(countries) {
+    this.listElement.innerHTML = '';
+    countries.forEach(({ id, name }) => {
+      const item = document.createElement('div');
+      item.className = 'country-item';
+      item.textContent = name;
+      item.addEventListener('mousedown', (e) => {
+        // mousedown (not click) so it fires before the input's blur
+        e.preventDefault();
+        this.selectCountry(id, name);
+      });
+      this.listElement.appendChild(item);
+    });
+  }
 
-      if (countryId && this.onSelectCallback) {
-        const country = this.countryLoader.getCountryById(countryId);
-        if (country) {
-          this.onSelectCallback(country);
-          this.clearButton.disabled = false;
-        }
-      }
+  selectCountry(id, name) {
+    this.searchInput.value = name;
+    this.listElement.classList.add('hidden');
+    this.clearButton.disabled = false;
+
+    if (this.onSelectCallback) {
+      const country = this.countryLoader.getCountryById(id);
+      if (country) this.onSelectCallback(country);
+    }
+  }
+
+  setupEventListeners() {
+    this.searchInput.addEventListener('focus', () => {
+      this.filterAndShow(this.searchInput.value);
+    });
+
+    this.searchInput.addEventListener('input', () => {
+      this.filterAndShow(this.searchInput.value);
+    });
+
+    this.searchInput.addEventListener('blur', () => {
+      // Small delay so mousedown on list item fires first
+      setTimeout(() => this.listElement.classList.add('hidden'), 150);
     });
 
     this.clearButton.addEventListener('click', () => {
-      if (this.onClearCallback) {
-        this.onClearCallback();
-      }
+      if (this.onClearCallback) this.onClearCallback();
       this.reset();
     });
   }
 
-  /**
-   * Set the callback for country selection
-   * @param {Function} callback - Function to call with selected country
-   */
-  onSelect(callback) {
-    this.onSelectCallback = callback;
+  filterAndShow(query) {
+    const q = query.toLowerCase().trim();
+    const filtered = q
+      ? this.countries.filter(c => c.name.toLowerCase().includes(q))
+      : this.countries;
+    this.renderList(filtered);
+    if (filtered.length > 0) {
+      this.listElement.classList.remove('hidden');
+    } else {
+      this.listElement.classList.add('hidden');
+    }
   }
 
-  /**
-   * Set the callback for clearing overlay
-   * @param {Function} callback - Function to call when clear is clicked
-   */
-  onClear(callback) {
-    this.onClearCallback = callback;
-  }
+  onSelect(callback) { this.onSelectCallback = callback; }
+  onClear(callback) { this.onClearCallback = callback; }
 
-  /**
-   * Reset the selector to default state
-   */
   reset() {
-    this.selectElement.value = '';
+    this.searchInput.value = '';
     this.clearButton.disabled = true;
+    this.listElement.classList.add('hidden');
   }
 
-  /**
-   * Enable the clear button
-   */
-  enableClearButton() {
-    this.clearButton.disabled = false;
-  }
-
-  /**
-   * Disable the clear button
-   */
-  disableClearButton() {
-    this.clearButton.disabled = true;
-  }
+  enableClearButton() { this.clearButton.disabled = false; }
+  disableClearButton() { this.clearButton.disabled = true; }
 }
