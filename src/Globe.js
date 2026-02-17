@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { coordsToVectors } from './utils/geoUtils.js';
+import { coordsToVectors, latLonToVector3 } from './utils/geoUtils.js';
 
 /**
  * Manages the Three.js scene, globe rendering, and country visualization
@@ -85,8 +85,19 @@ export class Globe {
   setupRaycaster() {
     this.raycaster = new THREE.Raycaster();
     this.mouse = new THREE.Vector2();
+    this.mouseDownPos = { x: 0, y: 0 };
 
-    this.canvas.addEventListener('click', (event) => this.onCanvasClick(event));
+    this.canvas.addEventListener('mousedown', (event) => {
+      this.mouseDownPos.x = event.clientX;
+      this.mouseDownPos.y = event.clientY;
+    });
+
+    this.canvas.addEventListener('click', (event) => {
+      const dx = event.clientX - this.mouseDownPos.x;
+      const dy = event.clientY - this.mouseDownPos.y;
+      if (dx * dx + dy * dy > 9) return; // ignore drags
+      this.onCanvasClick(event);
+    });
   }
 
   /**
@@ -116,33 +127,139 @@ export class Globe {
     }
 
     const lineMaterial = new THREE.LineBasicMaterial({
-      color: 0xffffff,
+      color: 0x000000,
       linewidth: 1,
       opacity: 0.8,
       transparent: true
     });
 
-    if (geometry.type === 'Polygon') {
-      // Single polygon - use outer ring (first coordinate array)
-      const points = coordsToVectors(geometry.coordinates[0], 5);
+    // Deterministic non-blue color for this country
+    const fillColor = this.countryColor(country.id);
+    const fillMaterial = new THREE.MeshBasicMaterial({
+      color: fillColor,
+      side: THREE.DoubleSide
+    });
+
+    const rings = geometry.type === 'Polygon'
+      ? [geometry.coordinates[0]]
+      : geometry.type === 'MultiPolygon'
+        ? geometry.coordinates.map(p => p[0])
+        : [];
+
+    rings.forEach(ring => {
+      // Create filled polygon
+      const fillMesh = this.createFilledPolygon(ring, 5.01, fillMaterial);
+      if (fillMesh) {
+        fillMesh.userData = { countryId: country.id };
+        this.countryGroup.add(fillMesh);
+        meshes.push(fillMesh);
+      }
+
+      // Create border line
+      const points = coordsToVectors(ring, 5.02);
       const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
       const line = new THREE.Line(lineGeometry, lineMaterial);
       line.userData = { countryId: country.id };
       this.countryGroup.add(line);
       meshes.push(line);
-    } else if (geometry.type === 'MultiPolygon') {
-      // Multiple polygons - iterate through each
-      geometry.coordinates.forEach(polygon => {
-        const points = coordsToVectors(polygon[0], 5);
-        const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
-        const line = new THREE.Line(lineGeometry, lineMaterial);
-        line.userData = { countryId: country.id };
-        this.countryGroup.add(line);
-        meshes.push(line);
-      });
-    }
+    });
 
     return meshes;
+  }
+
+  /**
+   * Create a filled polygon mesh from a coordinate ring
+   * @param {Array} coordinates - Array of [lon, lat] pairs
+   * @param {number} radius - Sphere radius
+   * @param {THREE.Material} material - Material for the mesh
+   * @returns {THREE.Mesh|null}
+   */
+  createFilledPolygon(coordinates, radius, material) {
+    if (coordinates.length < 3) return null;
+
+    // Remove closing duplicate point if present
+    const last = coordinates.length - 1;
+    const isClosed = coordinates[0][0] === coordinates[last][0] &&
+                     coordinates[0][1] === coordinates[last][1];
+    const openCoords = isClosed ? coordinates.slice(0, -1) : coordinates;
+
+    if (openCoords.length < 3) return null;
+
+    const points3D = openCoords.map(([lon, lat]) => latLonToVector3(lat, lon, radius));
+
+    // Triangulate in 2D lon/lat space
+    const points2D = openCoords.map(([lon, lat]) => new THREE.Vector2(lon, lat));
+    let triangles;
+    try {
+      triangles = THREE.ShapeUtils.triangulateShape(points2D, []);
+    } catch (e) {
+      return null;
+    }
+
+    if (triangles.length === 0) return null;
+
+    // Subdivide triangles so flat faces follow the sphere curvature.
+    // Without this, large triangles sag below the sphere and the ocean shows through.
+    const vertices = [];
+    const maxEdge = 0.3; // max 3D edge length before subdividing
+    for (const [a, b, c] of triangles) {
+      this.subdivideTriangle(points3D[a], points3D[b], points3D[c], radius, maxEdge, vertices);
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+    geo.computeVertexNormals();
+
+    return new THREE.Mesh(geo, material);
+  }
+
+  /**
+   * Recursively subdivide a triangle, projecting midpoints onto the sphere
+   * so the mesh follows curvature instead of cutting through the globe.
+   */
+  subdivideTriangle(a, b, c, radius, maxEdge, out) {
+    const ab = a.distanceTo(b);
+    const bc = b.distanceTo(c);
+    const ca = c.distanceTo(a);
+
+    if (ab <= maxEdge && bc <= maxEdge && ca <= maxEdge) {
+      out.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
+      return;
+    }
+
+    // Split the longest edge and project the midpoint onto the sphere
+    const mid = new THREE.Vector3();
+    if (ab >= bc && ab >= ca) {
+      mid.addVectors(a, b).multiplyScalar(0.5).setLength(radius);
+      this.subdivideTriangle(a, mid, c, radius, maxEdge, out);
+      this.subdivideTriangle(mid, b, c, radius, maxEdge, out);
+    } else if (bc >= ab && bc >= ca) {
+      mid.addVectors(b, c).multiplyScalar(0.5).setLength(radius);
+      this.subdivideTriangle(a, b, mid, radius, maxEdge, out);
+      this.subdivideTriangle(a, mid, c, radius, maxEdge, out);
+    } else {
+      mid.addVectors(c, a).multiplyScalar(0.5).setLength(radius);
+      this.subdivideTriangle(a, b, mid, radius, maxEdge, out);
+      this.subdivideTriangle(mid, b, c, radius, maxEdge, out);
+    }
+  }
+
+  /**
+   * Generate a deterministic non-blue color from a country ID
+   * @param {string|number} id - Country ID
+   * @returns {THREE.Color}
+   */
+  countryColor(id) {
+    // Simple string hash to get a stable number from the country ID
+    let hash = 0;
+    const str = String(id);
+    for (let i = 0; i < str.length; i++) {
+      hash = (hash * 31 + str.charCodeAt(i)) | 0;
+    }
+    // Map hash to hue 0-280, then skip the blue range (180-260)
+    let hue = ((hash >>> 0) % 280);
+    if (hue >= 180) hue += 80;
+    return new THREE.Color().setHSL(hue / 360, 0.7, 0.5);
   }
 
   /**

@@ -38,15 +38,31 @@ export class CountryLoader {
    * @returns {Object} GeoJSON FeatureCollection
    */
   parseTopoJSON(topology) {
-    const { objects, arcs } = topology;
+    const { objects, arcs, transform } = topology;
     const countries = objects.countries;
+
+    // Delta-decode all arcs up front
+    const decodedArcs = arcs.map(arc => {
+      let x = 0, y = 0;
+      return arc.map(point => {
+        x += point[0];
+        y += point[1];
+        if (transform) {
+          return [
+            x * transform.scale[0] + transform.translate[0],
+            y * transform.scale[1] + transform.translate[1]
+          ];
+        }
+        return [x, y];
+      });
+    });
 
     const features = countries.geometries.map(geom => {
       return {
         type: 'Feature',
         id: geom.id,
         properties: geom.properties || {},
-        geometry: this.topoGeometryToGeoJSON(geom, arcs)
+        geometry: this.topoGeometryToGeoJSON(geom, decodedArcs)
       };
     });
 
@@ -86,9 +102,11 @@ export class CountryLoader {
       const arc = arcs[arcIndex < 0 ? ~arcIndex : arcIndex];
       const points = arcIndex < 0 ? arc.slice().reverse() : arc.slice();
 
-      points.forEach(point => {
-        coordinates.push(point);
-      });
+      // Skip first point of subsequent arcs to avoid duplicates at joins
+      const start = coordinates.length > 0 ? 1 : 0;
+      for (let i = start; i < points.length; i++) {
+        coordinates.push(points[i]);
+      }
     });
 
     return coordinates;
