@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WorldView - Compare Country Sizes</title>
+  <script type="module" crossorigin src="/worldview/assets/index-niD66ISS.js"></script>
+  <link rel="stylesheet" crossorigin href="/worldview/assets/index-DzXxBUsU.css">
+</head>
+<body>
+  <div id="app">
+    <div id="controls">
+      <div class="control-group">
+        <label for="country-search">Search regions:</label>
+        <div id="country-search-wrapper">
+          <input id="country-search" type="text" placeholder="Search countries & regions..." autocomplete="off">
+          <div id="country-list" class="hidden"></div>
+        </div>
+      </div>
+      <button id="clear-btn" disabled>Clear Overlay</button>
+      <div id="loading" class="hidden">Loading countries...</div>
+    </div>
+    <div id="compass-control" class="hidden">
+      <svg id="compass" width="80" height="80" viewBox="-50 -50 100 100">
+        <g id="compass-outer">
+          <circle cx="0" cy="0" r="38" fill="rgba(26,26,46,0.8)" stroke="#444" stroke-width="1.5"/>
+          <line x1="0" y1="-38" x2="0" y2="-32" stroke="#888" stroke-width="1"/>
+          <line x1="38" y1="0" x2="32" y2="0" stroke="#555" stroke-width="1"/>
+          <line x1="0" y1="38" x2="0" y2="32" stroke="#555" stroke-width="1"/>
+          <line x1="-38" y1="0" x2="-32" y2="0" stroke="#555" stroke-width="1"/>
+          <text x="0" y="-41" text-anchor="middle" fill="#fff" font-size="10" font-weight="bold">N</text>
+          <text x="42" y="1" text-anchor="start" fill="#888" font-size="9" dominant-baseline="central">E</text>
+          <text x="0" y="47" text-anchor="middle" fill="#888" font-size="9">S</text>
+          <text x="-42" y="1" text-anchor="end" fill="#888" font-size="9" dominant-baseline="central">W</text>
+        </g>
+        <circle cx="0" cy="0" r="3" fill="#ccc"/>
+      </svg>
+    </div>
+    <div id="tooltip"></div>
+    <canvas id="globe-canvas"></canvas>
+  </div>
+</body>
+</html>
