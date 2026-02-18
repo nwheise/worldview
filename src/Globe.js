@@ -10,6 +10,9 @@ export class Globe {
     this.canvas = canvas;
     this.countries = [];
     this.countryMeshes = new Map(); // Map country ID to meshes for raycasting
+    this.countryColorMap = new Map(); // Map country name → THREE.Color for subdivision matching
+    this.countryFillMeshes = [];     // Fill meshes for hover raycasting
+    this.subdivisionHitMeshes = [];  // Transparent hit meshes for subdivision hover
 
     this.setupScene();
     this.setupLighting();
@@ -98,6 +101,29 @@ export class Globe {
       if (dx * dx + dy * dy > 9) return; // ignore drags
       this.onCanvasClick(event);
     });
+
+    this.canvas.addEventListener('mousemove', (event) => {
+      const rect = this.canvas.getBoundingClientRect();
+      this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+      this.raycaster.setFromCamera(this.mouse, this.camera);
+
+      // Subdivision hit meshes at r=5.015 are above country fills at r=5.01,
+      // so they are always intersected first when present.
+      const candidates = [...this.subdivisionHitMeshes, ...this.countryFillMeshes];
+      const intersects = this.raycaster.intersectObjects(candidates, false);
+
+      if (intersects.length > 0) {
+        const userData = intersects[0].object.userData;
+        const label = userData.type === 'subdivision'
+          ? userData.name
+          : (userData.countryName || String(userData.countryId));
+        if (this.onHover) this.onHover({ label, x: event.clientX, y: event.clientY });
+      } else {
+        if (this.onHover) this.onHover(null);
+      }
+    });
   }
 
   /**
@@ -133,8 +159,10 @@ export class Globe {
       transparent: true
     });
 
-    // Deterministic non-blue color for this country
-    const fillColor = this.countryColor(country.id);
+    // Deterministic non-blue color for this country, keyed by name for subdivision matching
+    const nameKey = country.properties?.name || String(country.id);
+    const fillColor = this.countryColor(nameKey);
+    this.countryColorMap.set(nameKey, fillColor);
     const fillMaterial = new THREE.MeshBasicMaterial({
       color: fillColor,
       side: THREE.DoubleSide
@@ -150,7 +178,8 @@ export class Globe {
       // Create filled polygon
       const fillMesh = this.createFilledPolygon(ring, 5.01, fillMaterial);
       if (fillMesh) {
-        fillMesh.userData = { countryId: country.id };
+        fillMesh.userData = { countryId: country.id, countryName: nameKey };
+        this.countryFillMeshes.push(fillMesh);
         this.countryGroup.add(fillMesh);
         meshes.push(fillMesh);
       }
@@ -174,7 +203,7 @@ export class Globe {
    * @param {THREE.Material} material - Material for the mesh
    * @returns {THREE.Mesh|null}
    */
-  createFilledPolygon(coordinates, radius, material) {
+  createFilledPolygon(coordinates, radius, material, maxEdge = 0.3) {
     if (coordinates.length < 3) return null;
 
     // Remove closing duplicate point if present
@@ -201,7 +230,6 @@ export class Globe {
     // Subdivide triangles so flat faces follow the sphere curvature.
     // Without this, large triangles sag below the sphere and the ocean shows through.
     const vertices = [];
-    const maxEdge = 0.3; // max 3D edge length before subdividing
     for (const [a, b, c] of triangles) {
       this.subdivideTriangle(points3D[a], points3D[b], points3D[c], radius, maxEdge, vertices);
     }
@@ -298,6 +326,69 @@ export class Globe {
    */
   setCountryClickHandler(callback) {
     this.onCountryClick = callback;
+  }
+
+  /**
+   * Set callback for hover events
+   * @param {Function} callback - Called with { label, x, y } on hover, null when leaving
+   */
+  setHoverHandler(callback) {
+    this.onHover = callback;
+  }
+
+  /**
+   * Render subdivision (admin1) borders on the globe
+   * @param {Array} features - Array of subdivision GeoJSON features
+   */
+  renderSubdivisions(features) {
+    const lineMaterial = new THREE.LineBasicMaterial({
+      color: 0x222222,
+      linewidth: 1,
+      opacity: 0.7,
+      transparent: true
+    });
+
+    features.forEach(feature => {
+      const geometry = feature.geometry;
+      if (!geometry || !geometry.coordinates) return;
+
+      const adminName = feature.properties?.admin;
+      const adm0_a3 = feature.properties?.adm0_a3;
+      const color = this.countryColorMap.get(adminName) || this.countryColor(adm0_a3 || adminName || '');
+
+      const hitMaterial = new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity: 0,
+        side: THREE.DoubleSide
+      });
+
+      const rings = geometry.type === 'Polygon'
+        ? [geometry.coordinates[0]]
+        : geometry.type === 'MultiPolygon'
+          ? geometry.coordinates.map(p => p[0])
+          : [];
+
+      rings.forEach(ring => {
+        // Subdivision border lines just above country borders
+        const points = coordsToVectors(ring, 5.021);
+        const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
+        const line = new THREE.Line(lineGeometry, lineMaterial);
+        this.countryGroup.add(line);
+
+        // Transparent hit mesh for hover raycasting (coarser subdivision for performance)
+        const hitMesh = this.createFilledPolygon(ring, 5.015, hitMaterial, 0.5);
+        if (hitMesh) {
+          hitMesh.userData = {
+            type: 'subdivision',
+            name: feature.properties?.name,
+            countryName: feature.properties?.admin || feature.properties?.sovereign
+          };
+          this.subdivisionHitMeshes.push(hitMesh);
+          this.countryGroup.add(hitMesh);
+        }
+      });
+    });
   }
 
   /**

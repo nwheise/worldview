@@ -63,6 +63,10 @@ class WorldViewApp {
 
       this.globe.renderCountries(this.countryLoader.countries);
 
+      if (this.subdivisionLoader.subdivisions.length > 0) {
+        this.globe.renderSubdivisions(this.subdivisionLoader.subdivisions);
+      }
+
       this.setupEventHandlers();
       this.setupCompass();
       this.startOverlayUpdate();
@@ -84,6 +88,18 @@ class WorldViewApp {
       this.compassControl.classList.add('hidden');
       this.compassRotation = 0;
       this.compassOuter.setAttribute('transform', 'rotate(0)');
+    });
+
+    this.tooltip = document.getElementById('tooltip');
+    this.globe.setHoverHandler((hit) => {
+      if (hit) {
+        this.tooltip.textContent = hit.label;
+        this.tooltip.style.left = (hit.x + 14) + 'px';
+        this.tooltip.style.top  = (hit.y + 14) + 'px';
+        this.tooltip.classList.add('visible');
+      } else {
+        this.tooltip.classList.remove('visible');
+      }
     });
   }
 

@@ -13,7 +13,7 @@ export class CountryLoader {
    */
   async load() {
     try {
-      const response = await fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json');
+      const response = await fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-50m.json');
 
       if (!response.ok) {
         throw new Error(`Failed to fetch country data: ${response.status}`);

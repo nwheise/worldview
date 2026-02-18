@@ -5,7 +5,9 @@ An interactive 3D globe web application that allows users to compare the true si
 ## Features
 
 - **Interactive 3D Globe**: Rotate and zoom with mouse/touch controls
-- **Country & Subdivision Visualization**: All countries rendered with deterministic colors and black outlines
+- **Country & Subdivision Visualization**: Countries rendered with deterministic colors and black outlines; admin1 subdivision borders drawn on top, color-matched to their country
+- **Hover Tooltips**: Hover over any country or subdivision on the globe to see its name in a tooltip
+- **High-Resolution Borders**: 50m-resolution country borders for detailed coastlines
 - **Size Comparison**: Overlay any country or admin1 subdivision on the globe to compare its true size with other regions
 - **Search**: Single search field covering both countries and admin1 subdivisions
 - **Click to Select**: Click directly on countries on the globe
@@ -115,7 +117,7 @@ Both data sources are fetched in parallel on startup. Subdivision failure is non
 
 ## Data Sources
 
-- Country boundaries: [world-atlas](https://github.com/topojson/world-atlas) (TopoJSON) via jsDelivr
+- Country boundaries: [world-atlas](https://github.com/topojson/world-atlas) (TopoJSON, 50m resolution) via jsDelivr
 - Subdivision boundaries: [Natural Earth 50m admin1](https://www.naturalearthdata.com/) via jsDelivr (`@v5.0.1`)
 
 ## License
