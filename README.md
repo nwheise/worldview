@@ -20,8 +20,8 @@ An interactive 3D globe web application that allows users to compare the true si
 - **Vite** - Fast development server and build tool
 - **three.js** - 3D rendering with WebGL
 - **OrbitControls** - Smooth mouse/touch rotation
-- **world-atlas** - TopoJSON country boundaries (via jsDelivr)
-- **Natural Earth 50m admin1** - Subdivision boundaries (via jsDelivr, pinned `@v5.0.1`)
+- **world-atlas** - TopoJSON country boundaries (bundled locally)
+- **Natural Earth 50m admin1** - Subdivision boundaries (bundled locally)
 - **Vanilla JavaScript** - No framework overhead
 
 ## Getting Started
@@ -55,11 +55,26 @@ The production files will be in the `dist/` directory.
 
 ### Deploy to GitHub Pages
 
+The live site is hosted at **https://nwheise.github.io/worldview/**.
+
+**First-time setup** (only needed once):
+
+1. Push the repository to GitHub.
+2. Go to **Settings → Pages** in the GitHub repo.
+3. Under "Build and deployment", set:
+   - Source: **Deploy from a branch**
+   - Branch: **`gh-pages`** / **`/ (root)`**
+4. Click **Save**.
+
+**To deploy:**
+
 ```bash
 npm run deploy
 ```
 
-This builds the project and publishes the `dist/` folder to the `gh-pages` branch. The live site is available at **https://nwheise.github.io/worldview/**.
+This builds the project and publishes the `dist/` folder to the `gh-pages` branch. GitHub Pages will serve the updated site within a minute or two.
+
+> **Note:** Geographic data files are bundled in `public/data/` and served from the same origin — no external CDN fetches at runtime.
 
 ## Usage
 
@@ -74,7 +89,12 @@ This builds the project and publishes the `dist/` folder to the `gh-pages` branc
 ```
 worldview/
 ├── package.json
+├── vite.config.js          # Vite config (sets base path for GitHub Pages)
 ├── index.html              # HTML structure, UI, and SVG compass dial
+├── public/
+│   └── data/
+│       ├── countries-50m.json                      # world-atlas TopoJSON (50m)
+│       └── ne_50m_admin_1_states_provinces.geojson # Natural Earth admin1 GeoJSON
 ├── src/
 │   ├── main.js            # Application entry and orchestration (WorldViewApp)
 │   ├── Globe.js           # Three.js scene and globe rendering (radius 5.0)
