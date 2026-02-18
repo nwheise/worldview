@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## IMPORTANT INSTRUCTIONS FOR CLAUDE
+- Claude must never work directly on main branch. Always use a feature branch.
+- Claude must always update the CLAUDE.md and README.md files when committing changes.
+
 ## Commands
 
 ```bash

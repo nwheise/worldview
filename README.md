@@ -1,24 +1,25 @@
 # WorldView - Interactive 3D Globe
 
-An interactive 3D globe web application that allows users to compare the true sizes of countries by overlaying them on each other. This addresses the common misconception about country sizes caused by traditional 2D map projections (Mercator distortion).
+An interactive 3D globe web application that allows users to compare the true sizes of countries and regions by overlaying them on each other. This addresses the common misconception about country sizes caused by traditional 2D map projections (Mercator distortion).
 
 ## Features
 
 - **Interactive 3D Globe**: Rotate and zoom with mouse/touch controls
-- **Country Visualization**: All countries rendered with white borders on the globe
-- **Size Comparison**: Overlay any country on the globe to compare its true size with other regions
-- **Two Selection Methods**:
-  - Select from dropdown menu
-  - Click directly on countries on the globe
-- **Fixed Overlay**: Selected country stays fixed in view while globe rotates beneath it
-- **Real Geographic Data**: Uses Natural Earth 110m resolution GeoJSON data
+- **Country & Subdivision Visualization**: All countries rendered with deterministic colors and black outlines
+- **Size Comparison**: Overlay any country or admin1 subdivision on the globe to compare its true size with other regions
+- **Search**: Single search field covering both countries and admin1 subdivisions
+- **Click to Select**: Click directly on countries on the globe
+- **Camera-Locked Overlay**: Selected region's centroid always faces the camera with geographic north mapped to screen-up
+- **Compass Dial**: Drag the compass ring to rotate the overlay, independent of globe rotation
+- **Real Geographic Data**: world-atlas TopoJSON (countries) + Natural Earth 50m admin1 GeoJSON (subdivisions)
 
 ## Technology Stack
 
 - **Vite** - Fast development server and build tool
 - **three.js** - 3D rendering with WebGL
 - **OrbitControls** - Smooth mouse/touch rotation
-- **Natural Earth** - High-quality geographic data
+- **world-atlas** - TopoJSON country boundaries (via jsDelivr)
+- **Natural Earth 50m admin1** - Subdivision boundaries (via jsDelivr, pinned `@v5.0.1`)
 - **Vanilla JavaScript** - No framework overhead
 
 ## Getting Started
@@ -26,7 +27,7 @@ An interactive 3D globe web application that allows users to compare the true si
 ### Prerequisites
 
 - Node.js (v14 or higher)
-- npm or yarn
+- npm
 
 ### Installation
 
@@ -52,26 +53,29 @@ The production files will be in the `dist/` directory.
 
 ## Usage
 
-1. **Select a Country**: Use the dropdown menu or click on a country on the globe
-2. **Compare Sizes**: Rotate the globe while the overlay stays fixed to compare the country's size with different regions
-3. **Clear Overlay**: Click the "Clear Overlay" button to remove the current selection
-4. **Explore**: Try overlaying Greenland on Africa to see how Mercator projection distorts sizes!
+1. **Select a Region**: Use the search field (countries and admin1 subdivisions) or click on a country on the globe
+2. **Compare Sizes**: Rotate the globe while the overlay stays camera-locked to compare the region's size with different areas
+3. **Rotate Overlay**: Drag the compass dial ring to rotate the overlay around the camera axis
+4. **Clear Overlay**: Click the "Clear Overlay" button to remove the current selection
+5. **Explore**: Try overlaying Greenland on Africa to see how Mercator projection distorts sizes!
 
 ## Project Structure
 
 ```
 worldview/
 ├── package.json
-├── index.html              # HTML structure and UI
+├── index.html              # HTML structure, UI, and SVG compass dial
 ├── src/
-│   ├── main.js            # Application entry and orchestration
-│   ├── Globe.js           # Three.js scene and globe rendering
-│   ├── CountryLoader.js   # GeoJSON data loading and parsing
-│   ├── CountryOverlay.js  # Overlay mesh creation and positioning
-│   ├── CountrySelector.js # Dropdown UI and selection handling
+│   ├── main.js            # Application entry and orchestration (WorldViewApp)
+│   ├── Globe.js           # Three.js scene and globe rendering (radius 5.0)
+│   ├── CountryLoader.js   # TopoJSON fetch, arc-stitch, and GeoJSON conversion
+│   ├── SubdivisionLoader.js # Natural Earth admin1 GeoJSON fetch and parse
+│   ├── CountryOverlay.js  # Overlay mesh at radius 5.005, camera-locked orientation
+│   ├── CountrySelector.js # Unified country+subdivision search and selection
 │   ├── utils/
 │   │   └── geoUtils.js    # Coordinate transformation utilities
 │   └── styles.css         # UI styling
+├── CLAUDE.md              # Claude Code guidance
 └── README.md
 ```
 
@@ -79,7 +83,7 @@ worldview/
 
 ### Coordinate Transformation
 
-The critical part of the application is converting geographic coordinates (latitude, longitude) to 3D Cartesian coordinates on a sphere:
+Geographic coordinates (latitude, longitude) to 3D Cartesian coordinates on a sphere:
 
 ```javascript
 function latLonToVector3(lat, lon, radius) {
@@ -96,36 +100,24 @@ function latLonToVector3(lat, lon, radius) {
 
 ### Overlay System
 
-The overlay uses a separate `THREE.Group` with independent rotation:
-- Globe mesh: radius 5.0, rotates with OrbitControls
-- Overlay mesh: radius 5.2, fixed rotation maintained in animation loop
-- Semi-transparent red material (40% opacity) for visual comparison
+- Globe mesh: radius **5.0**, rotates with OrbitControls
+- Overlay mesh: radius **5.005**, orientation recomputed every frame so the region's centroid faces the camera with north up
+- User compass rotation applied as `makeRotationAxis(cameraDir, -userRotation)` (negated for correct screen direction)
+- Semi-transparent red material for visual comparison
+
+### Data Pipeline
+
+Both data sources are fetched in parallel on startup. Subdivision failure is non-fatal — the app continues with countries only.
 
 ## Known Limitations
 
-- Countries crossing the antimeridian (±180° longitude) like Russia may have gaps in their borders
-- Complex multi-polygon countries use simplified triangulation
-- Minor distortion at extreme viewing angles is acceptable for size comparison purposes
+- Countries/regions crossing the antimeridian (±180° longitude) like Russia may have rendering gaps
 
-## Future Enhancements
+## Data Sources
 
-- Multiple simultaneous overlays with different colors
-- Higher resolution earth textures (NASA Blue Marble)
-- Country name labels on hover
-- Size comparison statistics (area in km²)
-- Color coding by continent/region
-- Search/filter functionality in dropdown
-- Mobile touch optimizations
-- Shareable permalinks for comparisons
-
-## Data Source
-
-Country boundary data from [Natural Earth](https://www.naturalearthdata.com/) via the [world-atlas](https://github.com/topojson/world-atlas) package.
+- Country boundaries: [world-atlas](https://github.com/topojson/world-atlas) (TopoJSON) via jsDelivr
+- Subdivision boundaries: [Natural Earth 50m admin1](https://www.naturalearthdata.com/) via jsDelivr (`@v5.0.1`)
 
 ## License
 
 ISC
-
-## Contributing
-
-This is a demonstration project. Feel free to fork and enhance!
