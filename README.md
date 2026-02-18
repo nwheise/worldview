@@ -125,8 +125,8 @@ Both data sources are fetched in parallel on startup. Subdivision failure is non
 
 ## Data Sources
 
-- Country boundaries: [world-atlas](https://github.com/topojson/world-atlas) (TopoJSON, 50m resolution) via jsDelivr
-- Subdivision boundaries: [Natural Earth 50m admin1](https://www.naturalearthdata.com/) via jsDelivr (`@v5.0.1`)
+- Country boundaries: [world-atlas](https://github.com/topojson/world-atlas) (TopoJSON, 50m resolution) — bundled in `public/data/`
+- Subdivision boundaries: [Natural Earth 50m admin1](https://www.naturalearthdata.com/) — bundled in `public/data/`
 
 ## License
 

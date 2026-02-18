@@ -12,7 +12,7 @@ export class SubdivisionLoader {
    */
   async load() {
     const response = await fetch(
-      'https://cdn.jsdelivr.net/gh/nvkelso/natural-earth-vector@v5.0.1/geojson/ne_50m_admin_1_states_provinces.geojson'
+      `${import.meta.env.BASE_URL}data/ne_50m_admin_1_states_provinces.geojson`
     );
 
     if (!response.ok) {
