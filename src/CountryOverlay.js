@@ -235,7 +235,7 @@ export class CountryOverlay {
 
     // Optional user rotation around the view axis (cameraDir)
     if (this.userRotation !== 0) {
-      const userRot = new THREE.Matrix4().makeRotationAxis(cameraDir, this.userRotation);
+      const userRot = new THREE.Matrix4().makeRotationAxis(cameraDir, -this.userRotation);
       rotMat.premultiply(userRot);
     }
 

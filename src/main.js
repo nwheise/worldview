@@ -1,5 +1,6 @@
 import { Globe } from './Globe.js';
 import { CountryLoader } from './CountryLoader.js';
+import { SubdivisionLoader } from './SubdivisionLoader.js';
 import { CountryOverlay } from './CountryOverlay.js';
 import { CountrySelector } from './CountrySelector.js';
 
@@ -14,7 +15,7 @@ class WorldViewApp {
     // Compass elements
     this.compassControl = document.getElementById('compass-control');
     this.compassSvg = document.getElementById('compass');
-    this.compassNeedle = document.getElementById('compass-needle');
+    this.compassOuter = document.getElementById('compass-outer');
     this.compassRotation = 0; // radians
 
     this.init();
@@ -27,18 +28,38 @@ class WorldViewApp {
       this.globe = new Globe(this.canvas);
 
       this.countryLoader = new CountryLoader();
-      await this.countryLoader.load();
+      this.subdivisionLoader = new SubdivisionLoader();
+
+      await Promise.all([
+        this.countryLoader.load(),
+        this.subdivisionLoader.load().catch(() => {
+          console.warn('Subdivision data unavailable; falling back to countries only.');
+        }),
+      ]);
 
       this.overlay = new CountryOverlay(this.globe.getScene(), this.globe.getCamera());
 
-      // Searchable country selector
+      // Build unified items list: countries + subdivisions
+      const countryItems = this.countryLoader.getCountryList().map(({ id, name }) => ({
+        id: `c-${id}`,
+        name,
+        displayName: name,
+        getFeature: () => this.countryLoader.getCountryById(id),
+      }));
+
+      const subdivisionItems = this.subdivisionLoader.getSubdivisionList().map(({ id, name, displayName }) => ({
+        id: `s-${id}`,
+        name,
+        displayName,
+        getFeature: () => this.subdivisionLoader.getSubdivisionById(id),
+      }));
+
       this.selector = new CountrySelector(
         document.getElementById('country-search'),
         document.getElementById('country-list'),
-        document.getElementById('clear-btn'),
-        this.countryLoader
+        document.getElementById('clear-btn')
       );
-      this.selector.populate();
+      this.selector.setItems([...countryItems, ...subdivisionItems]);
 
       this.globe.renderCountries(this.countryLoader.countries);
 
@@ -54,20 +75,20 @@ class WorldViewApp {
   }
 
   setupEventHandlers() {
-    this.selector.onSelect((country) => {
-      this.showCountryOverlay(country);
+    this.selector.onSelect((feature) => {
+      this.showOverlay(feature);
     });
 
     this.selector.onClear(() => {
       this.overlay.clear();
       this.compassControl.classList.add('hidden');
       this.compassRotation = 0;
-      this.compassNeedle.setAttribute('transform', 'rotate(0)');
+      this.compassOuter.setAttribute('transform', 'rotate(0)');
     });
   }
 
   /**
-   * Draggable compass: click-and-drag rotates the needle and the overlay.
+   * Draggable compass: click-and-drag rotates the outer ring and the overlay.
    * Supports both mouse and touch.
    */
   setupCompass() {
@@ -94,7 +115,7 @@ class WorldViewApp {
       const angle = getPointerAngle(clientX, clientY);
       this.compassRotation = rotationAtStart + (angle - dragStartAngle);
       const deg = this.compassRotation * 180 / Math.PI;
-      this.compassNeedle.setAttribute('transform', `rotate(${deg})`);
+      this.compassOuter.setAttribute('transform', `rotate(${deg})`);
       this.overlay.setRotation(this.compassRotation);
     };
 
@@ -121,14 +142,14 @@ class WorldViewApp {
     document.addEventListener('touchend', onEnd);
   }
 
-  showCountryOverlay(country) {
-    this.overlay.show(country);
+  showOverlay(feature) {
+    this.overlay.show(feature);
     this.selector.enableClearButton();
 
     // Show compass and reset rotation
     this.compassControl.classList.remove('hidden');
     this.compassRotation = 0;
-    this.compassNeedle.setAttribute('transform', 'rotate(0)');
+    this.compassOuter.setAttribute('transform', 'rotate(0)');
     this.overlay.setRotation(0);
   }
 

@@ -10,9 +10,9 @@
   <div id="app">
     <div id="controls">
       <div class="control-group">
-        <label for="country-search">Select Country:</label>
+        <label for="country-search">Search regions:</label>
         <div id="country-search-wrapper">
-          <input id="country-search" type="text" placeholder="Search countries..." autocomplete="off">
+          <input id="country-search" type="text" placeholder="Search countries & regions..." autocomplete="off">
           <div id="country-list" class="hidden"></div>
         </div>
       </div>
@@ -21,20 +21,18 @@
     </div>
     <div id="compass-control" class="hidden">
       <svg id="compass" width="80" height="80" viewBox="-50 -50 100 100">
-        <circle cx="0" cy="0" r="38" fill="rgba(26,26,46,0.8)" stroke="#444" stroke-width="1.5"/>
-        <line x1="0" y1="-38" x2="0" y2="-32" stroke="#888" stroke-width="1"/>
-        <line x1="38" y1="0" x2="32" y2="0" stroke="#555" stroke-width="1"/>
-        <line x1="0" y1="38" x2="0" y2="32" stroke="#555" stroke-width="1"/>
-        <line x1="-38" y1="0" x2="-32" y2="0" stroke="#555" stroke-width="1"/>
-        <text x="0" y="-41" text-anchor="middle" fill="#fff" font-size="10" font-weight="bold">N</text>
-        <text x="42" y="1" text-anchor="start" fill="#888" font-size="9" dominant-baseline="central">E</text>
-        <text x="0" y="47" text-anchor="middle" fill="#888" font-size="9">S</text>
-        <text x="-42" y="1" text-anchor="end" fill="#888" font-size="9" dominant-baseline="central">W</text>
-        <g id="compass-needle">
-          <polygon points="0,-30 -5,-18 5,-18" fill="#ff3333"/>
-          <polygon points="0,30 -5,18 5,18" fill="#555"/>
-          <circle cx="0" cy="0" r="3" fill="#ccc"/>
+        <g id="compass-outer">
+          <circle cx="0" cy="0" r="38" fill="rgba(26,26,46,0.8)" stroke="#444" stroke-width="1.5"/>
+          <line x1="0" y1="-38" x2="0" y2="-32" stroke="#888" stroke-width="1"/>
+          <line x1="38" y1="0" x2="32" y2="0" stroke="#555" stroke-width="1"/>
+          <line x1="0" y1="38" x2="0" y2="32" stroke="#555" stroke-width="1"/>
+          <line x1="-38" y1="0" x2="-32" y2="0" stroke="#555" stroke-width="1"/>
+          <text x="0" y="-41" text-anchor="middle" fill="#fff" font-size="10" font-weight="bold">N</text>
+          <text x="42" y="1" text-anchor="start" fill="#888" font-size="9" dominant-baseline="central">E</text>
+          <text x="0" y="47" text-anchor="middle" fill="#888" font-size="9">S</text>
+          <text x="-42" y="1" text-anchor="end" fill="#888" font-size="9" dominant-baseline="central">W</text>
         </g>
+        <circle cx="0" cy="0" r="3" fill="#ccc"/>
       </svg>
     </div>
     <canvas id="globe-canvas"></canvas>

@@ -1,13 +1,13 @@
 /**
- * Manages a searchable country selector: text input with a filtered dropdown list.
+ * Manages a searchable selector for countries and subdivisions.
+ * Each item has: { id, name, displayName, getFeature }
  */
 export class CountrySelector {
-  constructor(searchInput, listElement, clearButton, countryLoader) {
+  constructor(searchInput, listElement, clearButton) {
     this.searchInput = searchInput;
     this.listElement = listElement;
     this.clearButton = clearButton;
-    this.countryLoader = countryLoader;
-    this.countries = [];
+    this.items = [];
     this.onSelectCallback = null;
     this.onClearCallback = null;
 
@@ -15,38 +15,39 @@ export class CountrySelector {
   }
 
   /**
-   * Populate the internal country list from the loader.
+   * Replace the full items list.
+   * @param {Array<{id, name, displayName, getFeature}>} items
    */
-  populate() {
-    this.countries = this.countryLoader.getCountryList();
+  setItems(items) {
+    this.items = items;
   }
 
   /**
-   * Render a (possibly filtered) list of countries into the dropdown.
+   * Render a (possibly filtered) list of items into the dropdown.
    */
-  renderList(countries) {
+  renderList(items) {
     this.listElement.innerHTML = '';
-    countries.forEach(({ id, name }) => {
-      const item = document.createElement('div');
-      item.className = 'country-item';
-      item.textContent = name;
-      item.addEventListener('mousedown', (e) => {
+    items.forEach((item) => {
+      const el = document.createElement('div');
+      el.className = 'country-item';
+      el.textContent = item.displayName;
+      el.addEventListener('mousedown', (e) => {
         // mousedown (not click) so it fires before the input's blur
         e.preventDefault();
-        this.selectCountry(id, name);
+        this.selectItem(item);
       });
-      this.listElement.appendChild(item);
+      this.listElement.appendChild(el);
     });
   }
 
-  selectCountry(id, name) {
-    this.searchInput.value = name;
+  selectItem(item) {
+    this.searchInput.value = item.name;
     this.listElement.classList.add('hidden');
     this.clearButton.disabled = false;
 
     if (this.onSelectCallback) {
-      const country = this.countryLoader.getCountryById(id);
-      if (country) this.onSelectCallback(country);
+      const feature = item.getFeature();
+      if (feature) this.onSelectCallback(feature);
     }
   }
 
@@ -73,8 +74,11 @@ export class CountrySelector {
   filterAndShow(query) {
     const q = query.toLowerCase().trim();
     const filtered = q
-      ? this.countries.filter(c => c.name.toLowerCase().includes(q))
-      : this.countries;
+      ? this.items.filter(item =>
+          item.name.toLowerCase().includes(q) ||
+          item.displayName.toLowerCase().includes(q)
+        )
+      : this.items;
     this.renderList(filtered);
     if (filtered.length > 0) {
       this.listElement.classList.remove('hidden');
