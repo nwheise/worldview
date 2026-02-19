@@ -115,11 +115,18 @@ export class Globe {
       const intersects = this.raycaster.intersectObjects(candidates, false);
 
       if (intersects.length > 0) {
-        const userData = intersects[0].object.userData;
-        const label = userData.type === 'subdivision'
-          ? userData.name
-          : (userData.countryName || String(userData.countryId));
-        if (this.onHover) this.onHover({ label, x: event.clientX, y: event.clientY });
+        // Suppress hits on the far side of the globe: if the ray hits the
+        // globe sphere before the country mesh, the country is occluded.
+        const globeHits = this.raycaster.intersectObject(this.globeMesh, false);
+        if (globeHits.length > 0 && globeHits[0].distance < intersects[0].distance) {
+          if (this.onHover) this.onHover(null);
+        } else {
+          const userData = intersects[0].object.userData;
+          const label = userData.type === 'subdivision'
+            ? userData.name
+            : (userData.countryName || String(userData.countryId));
+          if (this.onHover) this.onHover({ label, x: event.clientX, y: event.clientY });
+        }
       } else {
         if (this.onHover) this.onHover(null);
       }
@@ -216,8 +223,23 @@ export class Globe {
 
     const points3D = openCoords.map(([lon, lat]) => latLonToVector3(lat, lon, radius));
 
-    // Triangulate in 2D lon/lat space
-    const points2D = openCoords.map(([lon, lat]) => new THREE.Vector2(lon, lat));
+    // Project 3D points onto a tangent plane at their centroid for 2D triangulation.
+    // This avoids the lon/lat wrapping problem that breaks Antarctica and other
+    // polar polygons whose coordinates span the full [-180, 180] longitude range.
+    const centroid = new THREE.Vector3();
+    for (const p of points3D) centroid.add(p);
+    centroid.divideScalar(points3D.length).normalize();
+
+    const refUp = Math.abs(centroid.y) < 0.99
+      ? new THREE.Vector3(0, 1, 0)
+      : new THREE.Vector3(1, 0, 0);
+    const right = new THREE.Vector3().crossVectors(centroid, refUp).normalize();
+    const forward = new THREE.Vector3().crossVectors(right, centroid).normalize();
+
+    const points2D = points3D.map(p =>
+      new THREE.Vector2(p.dot(right), p.dot(forward))
+    );
+
     let triangles;
     try {
       triangles = THREE.ShapeUtils.triangulateShape(points2D, []);
@@ -311,6 +333,12 @@ export class Globe {
     const intersects = this.raycaster.intersectObjects(allLines, false);
 
     if (intersects.length > 0) {
+      // Suppress clicks on the far side of the globe
+      const globeHits = this.raycaster.intersectObject(this.globeMesh, false);
+      if (globeHits.length > 0 && globeHits[0].distance < intersects[0].distance) {
+        return;
+      }
+
       const countryId = intersects[0].object.userData.countryId;
       const countryData = this.countryMeshes.get(countryId);
 

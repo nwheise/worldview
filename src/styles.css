@@ -188,6 +188,29 @@ label {
   display: block;
 }
 
+/* Info / attribution box */
+#info-box {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  z-index: 10;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(6px);
+  padding: 6px 12px;
+  border-radius: 6px;
+  color: #aaa;
+  font-size: 12px;
+}
+
+#info-box a {
+  color: #7aafff;
+  text-decoration: none;
+}
+
+#info-box a:hover {
+  text-decoration: underline;
+}
+
 /* Responsive adjustments */
 @media (max-width: 768px) {
   #controls {

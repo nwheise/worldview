@@ -1,6 +1,6 @@
 # WorldView - Interactive 3D Globe
 
-An interactive 3D globe web application that allows users to compare the true sizes of countries and regions by overlaying them on each other. This addresses the common misconception about country sizes caused by traditional 2D map projections (Mercator distortion).
+An interactive 3D globe web application that allows users to compare the true sizes of countries and regions by overlaying them on each other. Inspired by [thetruesize.com](https://thetruesize.com), it addresses the common misconception about country sizes caused by traditional 2D map projections (Mercator distortion).
 
 ## Features
 
@@ -142,6 +142,10 @@ Both data sources are fetched in parallel on startup. Subdivision failure is non
 ## Known Limitations
 
 - Countries/regions crossing the antimeridian (±180° longitude) like Russia may have rendering gaps
+
+## Credits
+
+- Inspired by [thetruesize.com](https://thetruesize.com)
 
 ## Data Sources
 
