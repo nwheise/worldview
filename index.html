@@ -9,15 +9,27 @@
 <body>
   <div id="app">
     <div id="controls">
-      <div class="control-group">
-        <label for="country-search">Search regions:</label>
-        <div id="country-search-wrapper">
-          <input id="country-search" type="text" placeholder="Search countries & regions..." autocomplete="off">
-          <div id="country-list" class="hidden"></div>
-        </div>
+      <div id="controls-header">
+        <span id="controls-title">TheTrueSize3D</span>
+        <button id="help-btn" title="How to use">?</button>
       </div>
-      <button id="clear-btn" disabled>Clear Overlay</button>
+      <div id="help-panel" class="hidden">
+        <ul>
+          <li>Search for a country or region to overlay it on the globe</li>
+          <li>Click <b>+ Add Overlay</b> to compare up to 3 regions</li>
+          <li>Click and drag an overlay to reposition it</li>
+          <li>Drag the compass dial to rotate all overlays</li>
+          <li>Drag the globe to spin it</li>
+        </ul>
+      </div>
+      <div id="overlay-slots"></div>
+      <button id="add-overlay-btn">+ Add Overlay</button>
       <div id="loading" class="hidden">Loading countries...</div>
+      <div id="info-box">
+        Inspired by <a href="https://thetruesize.com" target="_blank" rel="noopener">thetruesize.com</a>
+        &middot; <a href="https://github.com/nwheise/thetruesize3d" target="_blank" rel="noopener">GitHub</a>
+        &middot; <a href="https://github.com/nwheise/thetruesize3d/issues" target="_blank" rel="noopener">Feedback</a>
+      </div>
     </div>
     <div id="compass-control" class="hidden">
       <svg id="compass" width="80" height="80" viewBox="-50 -50 100 100">
@@ -36,11 +48,6 @@
       </svg>
     </div>
     <div id="tooltip"></div>
-    <div id="info-box">
-      Inspired by <a href="https://thetruesize.com" target="_blank" rel="noopener">thetruesize.com</a>
-      &middot; <a href="https://github.com/nwheise/thetruesize3d" target="_blank" rel="noopener">GitHub</a>
-      &middot; <a href="https://github.com/nwheise/thetruesize3d/issues" target="_blank" rel="noopener">Feedback</a>
-    </div>
     <canvas id="globe-canvas"></canvas>
   </div>
   <script type="module" src="/src/main.js"></script>

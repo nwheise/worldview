@@ -1,8 +1,12 @@
+import * as THREE from 'three';
 import { Globe } from './Globe.js';
 import { CountryLoader } from './CountryLoader.js';
 import { SubdivisionLoader } from './SubdivisionLoader.js';
 import { CountryOverlay } from './CountryOverlay.js';
 import { CountrySelector } from './CountrySelector.js';
+
+// Hex colours matching CountryOverlay OVERLAY_COLORS — used for the dot in the UI
+const SLOT_CSS_COLORS = ['#ff3333', '#4488ff', '#33cc66'];
 
 /**
  * Main application entry point
@@ -17,6 +21,10 @@ class TheTrueSize3DApp {
     this.compassSvg = document.getElementById('compass');
     this.compassOuter = document.getElementById('compass-outer');
     this.compassRotation = 0; // radians
+
+    // Multi-slot state
+    this.overlaySlots = []; // { slotIndex, selector, rowEl }
+    this.allItems = [];     // unified country + subdivision list (set after load)
 
     this.init();
   }
@@ -54,12 +62,7 @@ class TheTrueSize3DApp {
         getFeature: () => this.subdivisionLoader.getSubdivisionById(id),
       }));
 
-      this.selector = new CountrySelector(
-        document.getElementById('country-search'),
-        document.getElementById('country-list'),
-        document.getElementById('clear-btn')
-      );
-      this.selector.setItems([...countryItems, ...subdivisionItems]);
+      this.allItems = [...countryItems, ...subdivisionItems];
 
       this.globe.renderCountries(this.countryLoader.countries);
 
@@ -67,8 +70,13 @@ class TheTrueSize3DApp {
         this.globe.renderSubdivisions(this.subdivisionLoader.subdivisions);
       }
 
-      this.setupEventHandlers();
+      // Create the first slot automatically
+      this.addOverlaySlot();
+
+      this.setupTooltip();
       this.setupCompass();
+      this.setupOverlayDrag();
+      this.setupHelpPanel();
       this.startOverlayUpdate();
 
       this.hideLoading();
@@ -78,18 +86,111 @@ class TheTrueSize3DApp {
     }
   }
 
-  setupEventHandlers() {
-    this.selector.onSelect((feature) => {
-      this.showOverlay(feature);
+  // ---------------------------------------------------------------------------
+  // Slot management
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Adds a new overlay slot (up to 3).  Creates the DOM row, CountrySelector,
+   * and wires up callbacks.
+   */
+  addOverlaySlot() {
+    const slotIndex = this.overlaySlots.length; // 0, 1, or 2
+    if (slotIndex >= 3) return;
+
+    // --- Build DOM row ---
+    const row = document.createElement('div');
+    row.className = 'overlay-slot';
+    row.dataset.slotIndex = slotIndex;
+
+    const dot = document.createElement('span');
+    dot.className = 'overlay-color-dot';
+    dot.style.background = SLOT_CSS_COLORS[slotIndex];
+
+    const searchWrapper = document.createElement('div');
+    searchWrapper.className = 'slot-search-wrapper';
+
+    const input = document.createElement('input');
+    input.className = 'slot-search';
+    input.type = 'text';
+    input.placeholder = 'Search countries & regions…';
+    input.autocomplete = 'off';
+
+    const list = document.createElement('div');
+    list.className = 'slot-list hidden';
+
+    searchWrapper.appendChild(input);
+    searchWrapper.appendChild(list);
+
+    const clearBtn = document.createElement('button');
+    clearBtn.className = 'slot-clear-btn';
+    clearBtn.textContent = '×';
+    clearBtn.title = 'Remove this overlay';
+
+    row.appendChild(dot);
+    row.appendChild(searchWrapper);
+    row.appendChild(clearBtn);
+
+    document.getElementById('overlay-slots').appendChild(row);
+
+    // --- CountrySelector ---
+    const selector = new CountrySelector(input, list, clearBtn);
+    selector.setItems(this.allItems);
+
+    selector.onSelect((feature) => {
+      this.overlay.show(feature, slotIndex);
+      // Show compass on first overlay
+      this.compassControl.classList.remove('hidden');
     });
 
-    this.selector.onClear(() => {
-      this.overlay.clear();
+    selector.onClear(() => {
+      this.overlay.clear(slotIndex);
+      this.removeOverlaySlot(slotIndex);
+    });
+
+    this.overlaySlots.push({ slotIndex, selector, rowEl: row });
+
+    // Show/hide "+ Add Overlay" button
+    this._updateAddButton();
+  }
+
+  /**
+   * Remove a slot from the UI and overlay.
+   * @param {number} slotIndex
+   */
+  removeOverlaySlot(slotIndex) {
+    const idx = this.overlaySlots.findIndex(s => s.slotIndex === slotIndex);
+    if (idx === -1) return;
+
+    const { rowEl } = this.overlaySlots[idx];
+    rowEl.remove();
+    this.overlaySlots.splice(idx, 1);
+
+    this._updateAddButton();
+
+    if (!this.overlay.hasAnyOverlay()) {
       this.compassControl.classList.add('hidden');
       this.compassRotation = 0;
       this.compassOuter.setAttribute('transform', 'rotate(0)');
-    });
+      this.overlay.setRotation(0);
+    }
+  }
 
+  /** Show + Add Overlay if < 3 slots; hide it at 3. */
+  _updateAddButton() {
+    const btn = document.getElementById('add-overlay-btn');
+    if (this.overlaySlots.length >= 3) {
+      btn.classList.add('hidden');
+    } else {
+      btn.classList.remove('hidden');
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Event setup
+  // ---------------------------------------------------------------------------
+
+  setupTooltip() {
     this.tooltip = document.getElementById('tooltip');
     this.globe.setHoverHandler((hit) => {
       if (hit) {
@@ -101,10 +202,15 @@ class TheTrueSize3DApp {
         this.tooltip.classList.remove('visible');
       }
     });
+
+    // Wire "+ Add Overlay" button
+    document.getElementById('add-overlay-btn').addEventListener('click', () => {
+      this.addOverlaySlot();
+    });
   }
 
   /**
-   * Draggable compass: click-and-drag rotates the outer ring and the overlay.
+   * Draggable compass: click-and-drag rotates the outer ring and all overlays.
    * Supports both mouse and touch.
    */
   setupCompass() {
@@ -116,7 +222,6 @@ class TheTrueSize3DApp {
       const rect = this.compassSvg.getBoundingClientRect();
       const cx = rect.left + rect.width / 2;
       const cy = rect.top + rect.height / 2;
-      // Angle measured clockwise from top (north)
       return Math.atan2(clientX - cx, -(clientY - cy));
     };
 
@@ -158,15 +263,109 @@ class TheTrueSize3DApp {
     document.addEventListener('touchend', onEnd);
   }
 
-  showOverlay(feature) {
-    this.overlay.show(feature);
-    this.selector.enableClearButton();
+  /**
+   * Click-and-drag an overlay region to reposition it on the globe.
+   * Intercepts mousedown before OrbitControls when the cursor is over an overlay.
+   */
+  setupOverlayDrag() {
+    this.dragRaycaster = new THREE.Raycaster();
+    this.draggingSlot = -1;
 
-    // Show compass and reset rotation
-    this.compassControl.classList.remove('hidden');
-    this.compassRotation = 0;
-    this.compassOuter.setAttribute('transform', 'rotate(0)');
-    this.overlay.setRotation(0);
+    const getMouseNDC = (clientX, clientY) => {
+      const rect = this.canvas.getBoundingClientRect();
+      return new THREE.Vector2(
+        ((clientX - rect.left) / rect.width) * 2 - 1,
+        -((clientY - rect.top) / rect.height) * 2 + 1
+      );
+    };
+
+    // --- Mouse ---
+    this.canvas.addEventListener('mousedown', (e) => {
+      const meshes = this.overlay.getOverlayMeshes();
+      if (meshes.length === 0) return;
+
+      this.dragRaycaster.setFromCamera(getMouseNDC(e.clientX, e.clientY), this.globe.camera);
+      const hits = this.dragRaycaster.intersectObjects(meshes, false);
+      if (hits.length > 0) {
+        this.draggingSlot = hits[0].object.userData.slotIndex;
+        this.globe.controls.enabled = false;
+        this.canvas.style.cursor = 'grabbing';
+        e.stopPropagation();
+      }
+    });
+
+    this.canvas.addEventListener('mousemove', (e) => {
+      if (this.draggingSlot !== -1) {
+        // Pass NDC coords to overlay; it re-projects against the globe sphere
+        // internally each frame so the overlay tracks screen position.
+        this.overlay.setDisplayNDC(this.draggingSlot, getMouseNDC(e.clientX, e.clientY));
+        return;
+      }
+
+      // Hover cursor feedback
+      const meshes = this.overlay.getOverlayMeshes();
+      if (meshes.length > 0) {
+        this.dragRaycaster.setFromCamera(getMouseNDC(e.clientX, e.clientY), this.globe.camera);
+        const hits = this.dragRaycaster.intersectObjects(meshes, false);
+        this.canvas.style.cursor = hits.length > 0 ? 'grab' : '';
+      } else {
+        this.canvas.style.cursor = '';
+      }
+    });
+
+    document.addEventListener('mouseup', () => {
+      if (this.draggingSlot !== -1) {
+        this.draggingSlot = -1;
+        this.globe.controls.enabled = true;
+        this.canvas.style.cursor = '';
+      }
+    });
+
+    // --- Touch ---
+    this.canvas.addEventListener('touchstart', (e) => {
+      const meshes = this.overlay.getOverlayMeshes();
+      if (meshes.length === 0) return;
+
+      const t = e.touches[0];
+      this.dragRaycaster.setFromCamera(getMouseNDC(t.clientX, t.clientY), this.globe.camera);
+      const hits = this.dragRaycaster.intersectObjects(meshes, false);
+      if (hits.length > 0) {
+        this.draggingSlot = hits[0].object.userData.slotIndex;
+        this.globe.controls.enabled = false;
+        e.stopPropagation();
+      }
+    }, { passive: false });
+
+    this.canvas.addEventListener('touchmove', (e) => {
+      if (this.draggingSlot === -1) return;
+      const t = e.touches[0];
+      this.overlay.setDisplayNDC(this.draggingSlot, getMouseNDC(t.clientX, t.clientY));
+      e.preventDefault();
+    }, { passive: false });
+
+    document.addEventListener('touchend', () => {
+      if (this.draggingSlot !== -1) {
+        this.draggingSlot = -1;
+        this.globe.controls.enabled = true;
+      }
+    });
+  }
+
+  setupHelpPanel() {
+    const helpBtn = document.getElementById('help-btn');
+    const helpPanel = document.getElementById('help-panel');
+    helpBtn.addEventListener('click', () => {
+      helpPanel.classList.toggle('hidden');
+    });
+
+    // Close panel when clicking outside
+    document.addEventListener('click', (e) => {
+      if (!helpPanel.classList.contains('hidden') &&
+          !helpPanel.contains(e.target) &&
+          e.target !== helpBtn) {
+        helpPanel.classList.add('hidden');
+      }
+    });
   }
 
   startOverlayUpdate() {

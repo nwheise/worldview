@@ -33,55 +33,65 @@ body {
   z-index: 10;
   background: rgba(0, 0, 0, 0.7);
   backdrop-filter: blur(10px);
-  padding: 20px;
+  padding: 16px;
   border-radius: 8px;
   min-width: 280px;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
 }
 
-.control-group {
-  margin-bottom: 15px;
+/* ── Overlay slots ────────────────────────────────────── */
+
+#overlay-slots {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
 }
 
-label {
-  display: block;
-  margin-bottom: 8px;
-  color: #ffffff;
-  font-size: 14px;
-  font-weight: 500;
+.overlay-slot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
-/* Searchable country input */
-#country-search-wrapper {
+.overlay-color-dot {
+  flex-shrink: 0;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+
+.slot-search-wrapper {
   position: relative;
+  flex: 1;
 }
 
-#country-search {
+.slot-search {
   width: 100%;
-  padding: 10px 12px;
+  padding: 8px 10px;
   border: 1px solid #444;
   border-radius: 4px;
   background-color: #1a1a2e;
   color: #ffffff;
-  font-size: 14px;
+  font-size: 13px;
   outline: none;
   transition: border-color 0.2s;
 }
 
-#country-search:hover {
+.slot-search:hover {
   border-color: #666;
 }
 
-#country-search:focus {
+.slot-search:focus {
   border-color: #4a9eff;
 }
 
-#country-list {
+.slot-list {
   position: absolute;
   top: 100%;
   left: 0;
   right: 0;
-  max-height: 250px;
+  max-height: 220px;
   overflow-y: auto;
   background-color: #1a1a2e;
   border: 1px solid #444;
@@ -90,14 +100,62 @@ label {
   z-index: 20;
 }
 
-#country-list.hidden {
+.slot-list.hidden {
   display: none;
 }
 
-.country-item {
-  padding: 8px 12px;
+.slot-clear-btn {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 4px;
+  background-color: #444;
+  color: #ccc;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.slot-clear-btn:hover {
+  background-color: #cc3333;
   color: #fff;
-  font-size: 14px;
+}
+
+/* ── + Add Overlay button ─────────────────────────────── */
+
+#add-overlay-btn {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px dashed #555;
+  border-radius: 4px;
+  background-color: transparent;
+  color: #aaa;
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s;
+  margin-bottom: 4px;
+}
+
+#add-overlay-btn:hover {
+  border-color: #4a9eff;
+  color: #4a9eff;
+}
+
+#add-overlay-btn.hidden {
+  display: none;
+}
+
+/* ── Country item in dropdown ─────────────────────────── */
+
+.country-item {
+  padding: 7px 10px;
+  color: #fff;
+  font-size: 13px;
   cursor: pointer;
 }
 
@@ -105,31 +163,10 @@ label {
   background-color: #2a2a4e;
 }
 
-#clear-btn {
-  width: 100%;
-  padding: 10px 12px;
-  border: none;
-  border-radius: 4px;
-  background-color: #ff3333;
-  color: #ffffff;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background-color 0.2s;
-}
-
-#clear-btn:hover:not(:disabled) {
-  background-color: #ff5555;
-}
-
-#clear-btn:disabled {
-  background-color: #333;
-  color: #666;
-  cursor: not-allowed;
-}
+/* ── Loading indicator ────────────────────────────────── */
 
 #loading {
-  margin-top: 15px;
+  margin-top: 10px;
   padding: 10px;
   background-color: rgba(74, 158, 255, 0.2);
   border-left: 3px solid #4a9eff;
@@ -142,7 +179,8 @@ label {
   display: none;
 }
 
-/* Compass dial */
+/* ── Compass dial ─────────────────────────────────────── */
+
 #compass-control {
   position: absolute;
   top: 20px;
@@ -170,7 +208,8 @@ label {
   cursor: grabbing;
 }
 
-/* Hover tooltip */
+/* ── Hover tooltip ────────────────────────────────────── */
+
 #tooltip {
   position: fixed;
   z-index: 30;
@@ -188,36 +227,103 @@ label {
   display: block;
 }
 
-/* Info / attribution box */
-#info-box {
-  position: absolute;
-  bottom: 12px;
-  left: 12px;
-  z-index: 10;
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(6px);
-  padding: 6px 12px;
-  border-radius: 6px;
-  color: #aaa;
+/* ── Controls header (title + help button) ────────────── */
+
+#controls-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+#controls-title {
+  color: #ddd;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+#help-btn {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid #555;
+  background: transparent;
+  color: #888;
   font-size: 12px;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.2s, color 0.2s;
+}
+
+#help-btn:hover {
+  border-color: #4a9eff;
+  color: #4a9eff;
+}
+
+/* ── Help panel (inline, inside controls) ─────────────── */
+
+#help-panel {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+
+#help-panel ul {
+  list-style: disc;
+  padding-left: 16px;
+}
+
+#help-panel li {
+  color: #bbb;
+  font-size: 12px;
+  line-height: 1.5;
+  margin-bottom: 3px;
+}
+
+#help-panel li:last-child {
+  margin-bottom: 0;
+}
+
+#help-panel.hidden {
+  display: none;
+}
+
+/* ── Info / attribution box (inside controls panel) ──── */
+
+#info-box {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #333;
+  color: #666;
+  font-size: 11px;
+  line-height: 1.6;
 }
 
 #info-box a {
-  color: #7aafff;
+  color: #557faa;
   text-decoration: none;
 }
 
 #info-box a:hover {
+  color: #7aafff;
   text-decoration: underline;
 }
 
-/* Responsive adjustments */
+/* ── Responsive adjustments ───────────────────────────── */
+
 @media (max-width: 768px) {
   #controls {
     top: 10px;
     left: 10px;
     right: 10px;
     min-width: unset;
-    padding: 15px;
+    padding: 12px;
   }
 }
