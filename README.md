@@ -8,11 +8,12 @@ An interactive 3D globe web application that allows users to compare the true si
 - **Country & Subdivision Visualization**: Countries rendered with deterministic colors and flush black outlines; admin1 subdivision borders drawn on top, color-matched to their country
 - **Hover Tooltips**: Hover over any country or subdivision on the globe to see its name in a tooltip
 - **High-Resolution Borders**: 50m-resolution country borders for detailed coastlines
-- **Size Comparison**: Overlay any country or admin1 subdivision on the globe to compare its true size with other regions
-- **Search**: Single search field covering both countries and admin1 subdivisions
-- **Click to Select**: Click directly on countries on the globe
-- **Camera-Locked Overlay**: Selected region's centroid always faces the camera with geographic north mapped to screen-up
-- **Compass Dial**: Drag the compass ring to rotate the overlay, independent of globe rotation
+- **Multiple Overlays**: Compare up to 3 regions simultaneously — each shown in a distinct color (red, blue, green)
+- **Screen-Fixed Overlays**: Overlays stay at their screen position while the globe rotates freely underneath
+- **Drag to Reposition**: Click and drag any overlay to a new position on the screen
+- **Search**: Per-slot search field covering both countries and admin1 subdivisions
+- **Compass Dial**: Drag the compass ring to rotate all overlays together, independent of globe rotation
+- **Help Panel**: Click `?` in the controls panel to reveal a usage guide
 - **Real Geographic Data**: world-atlas TopoJSON (countries) + Natural Earth 50m admin1 GeoJSON (subdivisions)
 
 ## Technology Stack
@@ -78,11 +79,14 @@ This builds the project and publishes the `dist/` folder to the `gh-pages` branc
 
 ## Usage
 
-1. **Select a Region**: Use the search field (countries and admin1 subdivisions) or click on a country on the globe
-2. **Compare Sizes**: Rotate the globe while the overlay stays camera-locked to compare the region's size with different areas
-3. **Rotate Overlay**: Drag the compass dial ring to rotate the overlay around the camera axis
-4. **Clear Overlay**: Click the "Clear Overlay" button to remove the current selection
-5. **Explore**: Try overlaying Greenland on Africa to see how Mercator projection distorts sizes!
+1. **Select a Region**: Use the search field in the controls panel to find any country or admin1 subdivision
+2. **Add More Overlays**: Click **+ Add Overlay** to add a second or third region (up to 3, in red/blue/green)
+3. **Drag Overlays**: Click and drag any overlay to reposition it on the screen; the globe spins freely underneath
+4. **Compare Sizes**: Rotate the globe while the overlays stay screen-fixed to compare sizes across different regions
+5. **Rotate Overlay**: Drag the compass dial ring to rotate all overlays together around the view axis
+6. **Remove a Slot**: Click `×` next to a search field to clear that overlay
+7. **Help**: Click the `?` button at the top of the controls panel to show/hide the usage guide
+8. **Explore**: Try overlaying Greenland on Africa to see how Mercator projection distorts sizes!
 
 ## Project Structure
 
@@ -130,10 +134,12 @@ function latLonToVector3(lat, lon, radius) {
 
 ### Overlay System
 
-- Globe mesh: radius **5.0**, rotates with OrbitControls
-- Overlay mesh: radius **5.005**, orientation recomputed every frame so the region's centroid faces the camera with north up
-- User compass rotation applied as `makeRotationAxis(cameraDir, -userRotation)` (negated for correct screen direction)
-- Semi-transparent red material for visual comparison
+- Globe mesh: radius **5.0**; camera orbits around it via OrbitControls
+- Up to 3 overlay slots, each a `THREE.Group` at radius **5.005**
+- Each slot stores `originalCentroidDir` (fixed world-space centroid) and `displayNDC` (screen-space `THREE.Vector2`)
+- Every frame, `displayNDC` is re-projected to a world-space direction via analytic ray–sphere intersection against the globe sphere (radius 5.0) using the current camera — this is what keeps overlays fixed on screen while the globe rotates
+- Rotation matrix maps `originalCentroidDir → targetDir`; compass `userRotation` applied as `makeRotationAxis(cameraDir, -userRotation)`
+- Overlay colors: red (`0xff3333`), blue (`0x4488ff`), green (`0x33cc66`)
 
 ### Data Pipeline
 

@@ -1,57 +1,68 @@
 import * as THREE from 'three';
 import { latLonToVector3, coordsToVectors } from './utils/geoUtils.js';
 
+const OVERLAY_COLORS = [0xff3333, 0x4488ff, 0x33cc66]; // red, blue, green
+const NUM_SLOTS = 3;
+
 /**
- * Manages country overlay visualization with fixed screen-center positioning.
+ * Manages up to 3 independent country overlay slots on the globe.
  *
- * The overlay geometry is built on the sphere at a radius just barely above the
- * globe surface.  Each frame the overlayGroup is rotated so the country's
- * centroid faces the camera AND the country's geographic north points toward
- * the top of the screen (camera up).  An optional user rotation around the
- * view axis allows manual adjustment via a dial.
+ * Each slot has its own Three.js Group whose orientation is updated every frame
+ * so the country's centroid faces the camera and geographic north maps to
+ * screen-up.  A shared `userRotation` (compass dial) is applied to all active
+ * slots simultaneously.
  */
+// Globe radius must match Globe.js
+const GLOBE_RADIUS = 5.0;
+
 export class CountryOverlay {
   constructor(scene, camera) {
     this.scene = scene;
     this.camera = camera;
-    this.overlayGroup = new THREE.Group();
-    this.centroidDir = null;   // unit vector of country centroid on sphere
-    this.currentCountry = null;
-    this.userRotation = 0;     // additional rotation in radians around view axis
+    this.userRotation = 0;
+    this._raycaster = new THREE.Raycaster();
 
-    this.scene.add(this.overlayGroup);
+    this.slots = Array.from({ length: NUM_SLOTS }, (_, i) => ({
+      active: false,
+      country: null,
+      originalCentroidDir: null, // fixed direction computed at show(); never changes
+      displayNDC: null,          // THREE.Vector2 in NDC; null = always face camera (center)
+      group: new THREE.Group(),
+      color: OVERLAY_COLORS[i],
+    }));
+
+    // Add all groups to the scene up front; empty groups cost nothing
+    this.slots.forEach(slot => this.scene.add(slot.group));
   }
 
-  /**
-   * Set additional rotation around the view axis (from the UI dial).
-   * @param {number} radians
-   */
-  setRotation(radians) {
-    this.userRotation = radians;
-  }
+  // ---------------------------------------------------------------------------
+  // Public API
+  // ---------------------------------------------------------------------------
 
   /**
-   * Create and display an overlay for the selected country
-   * @param {Object} country - Country feature with geometry
+   * Show a country on the given slot.
+   * @param {Object} country - GeoJSON feature
+   * @param {number} slotIndex - 0, 1, or 2
    */
-  show(country) {
-    this.clear();
+  show(country, slotIndex) {
+    this.clear(slotIndex);
 
-    this.currentCountry = country;
+    const slot = this.slots[slotIndex];
+    slot.country = country;
+    slot.active = true;
+
     const geometry = country.geometry;
-
     if (!geometry || !geometry.coordinates) {
       console.warn('Country has no geometry:', country);
       return;
     }
 
-    // Compute the centroid direction (unit vector) of the country on the sphere
-    this.centroidDir = this.computeCentroidDirection(geometry);
+    slot.originalCentroidDir = this._computeCentroidDirection(geometry);
+    slot.displayNDC = null; // null → update() targets center of screen (cameraDir)
 
-    // Overlay radius just above the globe surface (5.0) so it sits flush
     const overlayRadius = 5.005;
-    const material = new THREE.MeshBasicMaterial({
-      color: 0xff3333,
+    const fillMaterial = new THREE.MeshBasicMaterial({
+      color: slot.color,
       transparent: true,
       opacity: 0.4,
       side: THREE.DoubleSide,
@@ -60,24 +71,131 @@ export class CountryOverlay {
     });
 
     if (geometry.type === 'Polygon') {
-      this.createPolygonOverlay(geometry.coordinates[0], overlayRadius, material);
+      this._createPolygonOverlay(geometry.coordinates[0], overlayRadius, fillMaterial, slotIndex);
     } else if (geometry.type === 'MultiPolygon') {
       geometry.coordinates.forEach(polygon => {
-        this.createPolygonOverlay(polygon[0], overlayRadius, material);
+        this._createPolygonOverlay(polygon[0], overlayRadius, fillMaterial, slotIndex);
       });
     }
 
-    // Apply initial rotation so it faces the camera immediately
     this.update();
   }
 
   /**
-   * Compute the centroid of the country as a unit direction vector on the sphere.
-   * Averages all 3D vertex positions and normalises the result.
-   * @param {Object} geometry - GeoJSON geometry
-   * @returns {THREE.Vector3} unit vector
+   * Clear a single slot — disposes meshes and marks slot inactive.
+   * @param {number} slotIndex
    */
-  computeCentroidDirection(geometry) {
+  clear(slotIndex) {
+    const slot = this.slots[slotIndex];
+    while (slot.group.children.length > 0) {
+      const child = slot.group.children[0];
+      if (child.geometry) child.geometry.dispose();
+      if (child.material) child.material.dispose();
+      slot.group.remove(child);
+    }
+    slot.active = false;
+    slot.country = null;
+    slot.originalCentroidDir = null;
+    slot.displayNDC = null;
+    slot.group.quaternion.identity();
+  }
+
+  /** Clear all slots. */
+  clearAll() {
+    for (let i = 0; i < NUM_SLOTS; i++) this.clear(i);
+  }
+
+  /**
+   * Set shared rotation from the compass dial.
+   * @param {number} radians
+   */
+  setRotation(radians) {
+    this.userRotation = radians;
+  }
+
+  /**
+   * Set where the overlay should appear, as a screen-space NDC coordinate.
+   * update() re-projects this to a globe point using the current camera each
+   * frame, so the overlay stays fixed on screen when the globe is rotated.
+   * @param {number} slotIndex
+   * @param {THREE.Vector2} ndc - NDC coords in [-1,1] x [-1,1]
+   */
+  setDisplayNDC(slotIndex, ndc) {
+    this.slots[slotIndex].displayNDC = ndc.clone();
+  }
+
+  /**
+   * Returns all fill Mesh objects from active slots (for drag raycasting).
+   * Line objects are excluded — they are too thin to reliably hit.
+   * @returns {THREE.Mesh[]}
+   */
+  getOverlayMeshes() {
+    const meshes = [];
+    this.slots.forEach(slot => {
+      if (!slot.active) return;
+      slot.group.children.forEach(child => {
+        if (child.isMesh) meshes.push(child);
+      });
+    });
+    return meshes;
+  }
+
+  /** @returns {boolean} true if any slot is active */
+  hasAnyOverlay() {
+    return this.slots.some(s => s.active);
+  }
+
+  /**
+   * @param {number} slotIndex
+   * @returns {boolean}
+   */
+  hasOverlay(slotIndex) {
+    return this.slots[slotIndex].active;
+  }
+
+  /**
+   * Update orientation for all active slots.  Call every animation frame.
+   */
+  update() {
+    const cameraDir = this.camera.position.clone().normalize();
+
+    this.slots.forEach(slot => {
+      if (!slot.active || !slot.originalCentroidDir) return;
+
+      // Re-project the stored NDC position against the globe sphere using the
+      // current camera.  This makes the overlay track a fixed screen position
+      // rather than a fixed world-space point, so spinning the globe underneath
+      // does not move the overlay.
+      let targetDir;
+      if (slot.displayNDC) {
+        targetDir = this._ndcToGlobeDir(slot.displayNDC) ?? cameraDir;
+      } else {
+        targetDir = cameraDir;
+      }
+
+      const srcFrame = this._localFrame(slot.originalCentroidDir);
+      const tgtFrame = this._localFrame(targetDir);
+
+      const srcMat = new THREE.Matrix4().makeBasis(srcFrame.right, srcFrame.up, srcFrame.forward);
+      const tgtMat = new THREE.Matrix4().makeBasis(tgtFrame.right, tgtFrame.up, tgtFrame.forward);
+
+      const rotMat = tgtMat.clone().multiply(srcMat.clone().invert());
+
+      if (this.userRotation !== 0) {
+        const userRot = new THREE.Matrix4().makeRotationAxis(cameraDir, -this.userRotation);
+        rotMat.premultiply(userRot);
+      }
+
+      slot.group.quaternion.setFromRotationMatrix(rotMat);
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Private helpers
+  // ---------------------------------------------------------------------------
+
+  /** @private */
+  _computeCentroidDirection(geometry) {
     const rings =
       geometry.type === 'Polygon'
         ? [geometry.coordinates[0]]
@@ -90,7 +208,7 @@ export class CountryOverlay {
 
     rings.forEach(ring => {
       ring.forEach(([lon, lat]) => {
-        sum.add(latLonToVector3(lat, lon, 1)); // unit sphere
+        sum.add(latLonToVector3(lat, lon, 1));
         count++;
       });
     });
@@ -99,41 +217,53 @@ export class CountryOverlay {
   }
 
   /**
-   * Compute the local tangent frame at a point on the unit sphere.
-   * Returns { right, up, forward } where forward = dir (outward normal),
-   * up = geographic-north tangent, right = east tangent.
-   * @param {THREE.Vector3} dir - unit vector (point on sphere)
-   * @returns {{right: THREE.Vector3, up: THREE.Vector3, forward: THREE.Vector3}}
+   * @private
+   * Compute {right, up, forward} tangent frame at a point on the unit sphere.
    */
-  localFrame(dir) {
+  _localFrame(dir) {
     const worldUp = new THREE.Vector3(0, 1, 0);
     const forward = dir.clone();
 
-    // Project world-up onto the tangent plane to get the "north" tangent.
-    // north = normalize( Y - (Y·dir) * dir )
     let up = worldUp.clone().addScaledVector(forward, -worldUp.dot(forward));
     if (up.lengthSq() < 1e-8) {
-      // dir is near a pole — fall back to Z as reference
       up = new THREE.Vector3(0, 0, 1).addScaledVector(forward, -new THREE.Vector3(0, 0, 1).dot(forward));
     }
     up.normalize();
 
     const right = new THREE.Vector3().crossVectors(up, forward).normalize();
-
     return { right, up, forward };
   }
 
   /**
-   * Create a single polygon overlay mesh
-   * @param {Array} coordinates - Array of [lon, lat] pairs
-   * @param {number} radius - Sphere radius for overlay
-   * @param {THREE.Material} material - Material for the overlay
+   * @private
+   * Cast a ray from the camera through an NDC point and return the normalised
+   * direction to the nearest globe-sphere intersection, or null if the ray misses.
+   * Using analytic sphere intersection avoids needing a mesh reference.
+   * @param {THREE.Vector2} ndc
+   * @returns {THREE.Vector3|null}
    */
-  createPolygonOverlay(coordinates, radius, material) {
+  _ndcToGlobeDir(ndc) {
+    this._raycaster.setFromCamera(ndc, this.camera);
+    const ro = this._raycaster.ray.origin;
+    const rd = this._raycaster.ray.direction;
+    // Solve |ro + t*rd|² = R²  →  t² + 2(ro·rd)t + (|ro|²-R²) = 0
+    const b = ro.dot(rd);
+    const c = ro.dot(ro) - GLOBE_RADIUS * GLOBE_RADIUS;
+    const disc = b * b - c;
+    if (disc < 0) return null;
+    const t = -b - Math.sqrt(disc); // front (near) intersection
+    if (t < 0) return null;
+    return ro.clone().addScaledVector(rd, t).normalize();
+  }
+
+  /**
+   * @private
+   * Build fill + outline meshes for one polygon ring and add to the slot's group.
+   * Fill meshes get `userData.slotIndex` for raycasting.
+   */
+  _createPolygonOverlay(coordinates, radius, fillMaterial, slotIndex) {
     if (coordinates.length < 3) return;
 
-    // GeoJSON polygon rings are closed (last point === first point); remove the duplicate
-    // before triangulating so earcut doesn't produce a degenerate zero-area triangle.
     const last = coordinates.length - 1;
     const isClosed = coordinates[0][0] === coordinates[last][0] &&
                      coordinates[0][1] === coordinates[last][1];
@@ -141,11 +271,9 @@ export class CountryOverlay {
 
     if (openCoords.length < 3) return;
 
-    // Map open ring to 3D sphere positions
     const points3D = openCoords.map(([lon, lat]) => latLonToVector3(lat, lon, radius));
-
-    // Triangulate in 2D lat/lon space using earcut (via THREE.ShapeUtils).
     const points2D = openCoords.map(([lon, lat]) => new THREE.Vector2(lon, lat));
+
     let triangles;
     try {
       triangles = THREE.ShapeUtils.triangulateShape(points2D, []);
@@ -161,94 +289,31 @@ export class CountryOverlay {
         vertices.push(pa.x, pa.y, pa.z, pb.x, pb.y, pb.z, pc.x, pc.y, pc.z);
       }
 
-      const geometry = new THREE.BufferGeometry();
-      geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-      geometry.computeVertexNormals();
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+      geo.computeVertexNormals();
 
-      const mesh = new THREE.Mesh(geometry, material);
+      const mesh = new THREE.Mesh(geo, fillMaterial);
       mesh.renderOrder = 999;
-      this.overlayGroup.add(mesh);
+      mesh.userData = { slotIndex };
+      this.slots[slotIndex].group.add(mesh);
     }
 
-    // Border lines use the original closed ring so the outline is fully closed
+    // Border lines
+    const slot = this.slots[slotIndex];
+    const lineColor = slot.color;
     const linePoints = coordsToVectors(coordinates, radius);
-    const lineGeometry = new THREE.BufferGeometry().setFromPoints(linePoints);
-    const lineMaterial = new THREE.LineBasicMaterial({
-      color: 0xff0000,
+    const lineGeo = new THREE.BufferGeometry().setFromPoints(linePoints);
+    const lineMat = new THREE.LineBasicMaterial({
+      color: lineColor,
       linewidth: 2,
       transparent: true,
       opacity: 0.8,
       depthTest: false,
       depthWrite: false,
     });
-    const line = new THREE.Line(lineGeometry, lineMaterial);
+    const line = new THREE.Line(lineGeo, lineMat);
     line.renderOrder = 999;
-    this.overlayGroup.add(line);
-  }
-
-  /**
-   * Clear the current overlay
-   */
-  clear() {
-    while (this.overlayGroup.children.length > 0) {
-      const child = this.overlayGroup.children[0];
-      if (child.geometry) child.geometry.dispose();
-      if (child.material) child.material.dispose();
-      this.overlayGroup.remove(child);
-    }
-
-    this.currentCountry = null;
-    this.centroidDir = null;
-  }
-
-  /**
-   * Rotate the overlay group so:
-   *  1. The country centroid faces the camera.
-   *  2. Geographic north at the centroid maps to screen-up at the camera point.
-   *  3. An optional user rotation is applied around the view axis.
-   *
-   * Call this every frame in the animation loop.
-   */
-  update() {
-    if (!this.centroidDir) return;
-
-    const cameraDir = this.camera.position.clone().normalize();
-
-    // Build the tangent frame at the centroid (source) and camera-facing
-    // point (target).  Both frames are {right, up, forward}.
-    const srcFrame = this.localFrame(this.centroidDir);
-    const tgtFrame = this.localFrame(cameraDir);
-
-    // Source basis matrix (columns = right, up, forward)
-    const srcMat = new THREE.Matrix4().makeBasis(
-      srcFrame.right, srcFrame.up, srcFrame.forward
-    );
-
-    // Target basis matrix
-    const tgtMat = new THREE.Matrix4().makeBasis(
-      tgtFrame.right, tgtFrame.up, tgtFrame.forward
-    );
-
-    // Rotation = tgtMat * srcMat^T  (maps source frame → target frame)
-    const srcMatInv = srcMat.clone().invert();
-    const rotMat = tgtMat.clone().multiply(srcMatInv);
-
-    // Optional user rotation around the view axis (cameraDir)
-    if (this.userRotation !== 0) {
-      const userRot = new THREE.Matrix4().makeRotationAxis(cameraDir, -this.userRotation);
-      rotMat.premultiply(userRot);
-    }
-
-    this.overlayGroup.quaternion.setFromRotationMatrix(rotMat);
-  }
-
-  /** @returns {boolean} */
-  hasOverlay() {
-    return this.currentCountry !== null;
-  }
-
-  /** @returns {Object|null} */
-  getCurrentCountry() {
-    return this.currentCountry;
+    slot.group.add(line);
   }
 }
